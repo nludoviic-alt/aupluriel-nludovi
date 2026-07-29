@@ -224,9 +224,9 @@ class MT5Connector:
             for p in self._sim_positions:
                 p.current_price = current_price
                 if p.direction == "BUY":
-                    p.profit = (current_price - p.entry_price) * p.volume * 100
+                    p.profit = (current_price - p.entry_price) * p.volume
                 else:
-                    p.profit = (p.entry_price - current_price) * p.volume * 100
+                    p.profit = (p.entry_price - current_price) * p.volume
             return list(self._sim_positions)
 
         positions = self.mt5.positions_get(symbol=self.config.symbol_mt5)

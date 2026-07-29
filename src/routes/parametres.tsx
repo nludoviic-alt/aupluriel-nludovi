@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { Bell, CheckCircle2, Eye, EyeOff, FlaskConical, KeyRound, Loader2, LogOut, ShieldAlert, UserCircle, Wifi, WifiOff } from "lucide-react";
+import { Bell, CheckCircle2, CreditCard, Eye, EyeOff, FlaskConical, KeyRound, Loader2, LogOut, ShieldAlert, UserCircle, Wifi, WifiOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
@@ -27,6 +27,8 @@ const KEYS = {
   maxDrawdown: "lio23.max_drawdown",
 };
 
+const MT5_KEY = "au-pluriel-mt5-form";
+
 function SettingsPage() {
   const { user, refresh: refreshAuth } = useAuth();
   const [avatar, setAvatar] = useState(user?.avatar ?? "");
@@ -48,6 +50,8 @@ function SettingsPage() {
   const [pushChecked, setPushChecked] = useState(false);
   // Broker enable/disable toggles
   const [enableDeriv, setEnableDeriv] = useState(true);
+  const [mt5Form, setMt5Form] = useState({ account_type: "demo", login: "6222926", password: "", server: "Deriv-Demo" });
+  const [mt5Show, setMt5Show] = useState(false);
   const { confirmState, confirm } = useConfirm();
 
   useEffect(() => {
@@ -58,6 +62,19 @@ function SettingsPage() {
     setRisk(Number(localStorage.getItem(KEYS.riskPerTrade) ?? 2));
     setMaxDd(Number(localStorage.getItem(KEYS.maxDrawdown) ?? 5));
     setStake(loadDefaultStake());
+    // Load MT5 credentials from localStorage
+    try {
+      const raw = localStorage.getItem(MT5_KEY);
+      if (raw) {
+        const saved = JSON.parse(raw);
+        setMt5Form({
+          account_type: saved.account_type ?? "demo",
+          login: saved.login ?? "6222926",
+          password: saved.password ?? "",
+          server: saved.server ?? "Deriv-Demo",
+        });
+      }
+    } catch { /* ignore */ }
     // Then hydrate from server
     api.get<Record<string, unknown>>("/api/settings").then((s) => {
       if (s.deriv_token) setToken(s.deriv_token as string);
@@ -162,6 +179,7 @@ function SettingsPage() {
     localStorage.setItem(KEYS.account, account);
     localStorage.setItem(KEYS.riskPerTrade, String(risk));
     localStorage.setItem(KEYS.maxDrawdown, String(maxDd));
+    localStorage.setItem(MT5_KEY, JSON.stringify(mt5Form));
     saveDefaultStake(stake);
     await api.put("/api/settings", {
       deriv_token: token || null,
@@ -350,8 +368,99 @@ function SettingsPage() {
           </CollapsibleSection>
         </div>
 
-        {/* RIGHT COLUMN: Risk + Push */}
+        {/* RIGHT COLUMN: MT5 Account + Risk + Push */}
         <div className="space-y-6">
+          {/* MT5 Account Card */}
+          <CollapsibleSection
+            icon={<CreditCard className="mt-1 h-5.5 w-5.5 text-emerald-400 shrink-0" />}
+            title="Compte Deriv MT5"
+            help="Identifiants de connexion au terminal MetaTrader 5 Deriv. Sauvegardés localement et dans le backend (.env)."
+            defaultOpen
+          >
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <span className="text-[11px] md:text-xs font-bold uppercase tracking-wider text-neutral-300">Type de Compte</span>
+                  <div className="flex bg-neutral-950/80 p-1.5 rounded-xl border border-white/5 gap-1.5">
+                    {(["demo", "real"] as const).map((t) => (
+                      <button
+                        key={t}
+                        onClick={() => setMt5Form({ ...mt5Form, account_type: t, server: t === "demo" ? "Deriv-Demo" : "Deriv-Server" })}
+                        className={cn(
+                          "flex-1 py-1.5 text-[10px] uppercase tracking-wider font-bold rounded-lg transition-all text-center",
+                          mt5Form.account_type === t
+                            ? t === "demo"
+                              ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/20"
+                              : "bg-red-500/15 text-red-400 border border-red-500/20"
+                            : "text-muted-foreground hover:text-foreground border border-transparent"
+                        )}
+                      >
+                        {t === "demo" ? "Démo" : "Réel"}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <span className="text-[11px] md:text-xs font-bold uppercase tracking-wider text-neutral-300">Serveur</span>
+                  <input
+                    type="text"
+                    list="deriv-servers-settings"
+                    value={mt5Form.server}
+                    onChange={(e) => setMt5Form({ ...mt5Form, server: e.target.value })}
+                    className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-xs md:text-sm font-mono text-foreground focus:ring-1 focus:ring-emerald-500/50 outline-none"
+                  />
+                  <datalist id="deriv-servers-settings">
+                    <option value="Deriv-Demo" />
+                    <option value="Deriv-Server" />
+                    <option value="Deriv-Server-02" />
+                    <option value="DerivSVG-Server" />
+                    <option value="DerivBVI-Server" />
+                  </datalist>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <span className="text-[11px] md:text-xs font-bold uppercase tracking-wider text-neutral-300">ID Compte MT5 (Login)</span>
+                <input
+                  type="text"
+                  value={mt5Form.login}
+                  onChange={(e) => setMt5Form({ ...mt5Form, login: e.target.value })}
+                  className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-xs md:text-sm font-mono font-bold text-foreground focus:ring-1 focus:ring-emerald-500/50 outline-none"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <span className="text-[11px] md:text-xs font-bold uppercase tracking-wider text-neutral-300">Mot de Passe MT5</span>
+                <div className="relative">
+                  <input
+                    type={mt5Show ? "text" : "password"}
+                    value={mt5Form.password}
+                    onChange={(e) => setMt5Form({ ...mt5Form, password: e.target.value })}
+                    autoComplete="off"
+                    className="w-full rounded-xl border border-border bg-background px-3 py-2.5 pr-10 text-xs md:text-sm font-mono font-bold text-foreground focus:ring-1 focus:ring-emerald-500/50 outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setMt5Show((s) => !s)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  >
+                    {mt5Show ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
+                <p className="text-[10px] text-muted-foreground">
+                  Sauvegardé localement et dans le backend (.env). Cliquez "Enregistrer" pour appliquer.
+                </p>
+              </div>
+
+              <a
+                href="/compte-deriv"
+                className="block text-center text-[11px] font-bold uppercase tracking-wider text-emerald-400 hover:text-emerald-300 transition-colors pt-1"
+              >
+                → Page de connexion MT5 complète
+              </a>
+            </div>
+          </CollapsibleSection>
+
           {/* Risk Management Card */}
           <CollapsibleSection
             icon={<ShieldAlert className="mt-1 h-5.5 w-5.5 text-amber-400 shrink-0" />}

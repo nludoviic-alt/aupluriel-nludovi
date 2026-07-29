@@ -181,7 +181,8 @@ export function useEngine() {
         setConnected(true);
         setLatencyMs(Math.round(performance.now() - start));
       }
-    } catch {
+    } catch (e) {
+      console.error("[engine] fetchStatus failed:", e, "URL:", `${API_BASE}/status`);
       setConnected(false);
       setLatencyMs(null);
     }
@@ -222,6 +223,8 @@ export function useEngine() {
     }
   }, [fetchStatus]);
 
+  const pingInterval = useRef<ReturnType<typeof setInterval> | null>(null);
+
   const connectWs = useCallback(() => {
     if (wsRef.current?.readyState === WebSocket.OPEN) return;
 
@@ -231,6 +234,12 @@ export function useEngine() {
 
       ws.onopen = () => {
         console.log("[engine] WebSocket connected");
+        if (pingInterval.current) clearInterval(pingInterval.current);
+        pingInterval.current = setInterval(() => {
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: "ping" }));
+          }
+        }, 25000);
       };
 
       ws.onmessage = (event) => {
@@ -249,6 +258,7 @@ export function useEngine() {
       ws.onclose = () => {
         console.log("[engine] WebSocket disconnected, reconnecting in 3s");
         wsRef.current = null;
+        if (pingInterval.current) { clearInterval(pingInterval.current); pingInterval.current = null; }
         reconnectTimer.current = setTimeout(connectWs, 3000);
       };
 
@@ -273,6 +283,7 @@ export function useEngine() {
     return () => {
       clearInterval(interval);
       if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
+      if (pingInterval.current) clearInterval(pingInterval.current);
       wsRef.current?.close();
     };
   }, [fetchStatus, fetchLogs, connectWs]);

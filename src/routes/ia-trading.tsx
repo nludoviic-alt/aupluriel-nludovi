@@ -183,7 +183,8 @@ function AutoTraderPage() {
   const equitySeries = useRollingSeries(account?.equity, 30);
   const todayStr = new Date().toDateString();
   const tradesToday = trades.filter((t) => new Date(t.timestamp * 1000).toDateString() === todayStr).length;
-  const dailyLossPct = risk?.daily_loss_limit ? Math.min(100, (Math.abs(risk.daily_loss) / risk.daily_loss_limit) * 100) : 0;
+  const dailyLossLimitAbs = Math.abs(risk?.daily_loss_limit ?? 0);
+  const dailyLossPct = dailyLossLimitAbs > 0 ? Math.min(100, (Math.abs(risk?.daily_loss ?? 0) / dailyLossLimitAbs) * 100) : 0;
   const adaptive = status?.adaptive;
   const calendar = status?.calendar;
   const regime = status?.regime;
@@ -191,14 +192,18 @@ function AutoTraderPage() {
   const recentTrades = trades.slice(0, 10);
   const sessions = useMemo(() => getMarketSessions(), []);
 
-  const totalBalance = account?.balance ?? 10000.00;
-  const equityVal = account?.equity ?? 10000.00;
-  const freeMarginVal = account?.free_margin ?? 10000.00;
-  const leverageVal = account?.leverage ?? 1000;
+  const totalBalance = account?.balance ?? 0;
+  const equityVal = account?.equity ?? 0;
+  const freeMarginVal = account?.margin_free ?? 0;
+  const leverageVal = 1000;
 
   const winsCount = adaptive?.total_wins ?? trades.filter((t) => t.result === "win").length;
   const lossesCount = (adaptive?.total_trades ?? trades.length) - winsCount;
-  const winRateVal = adaptive?.win_rate ?? (trades.length > 0 ? (winsCount / trades.length) * 100 : 14);
+  const winRateVal = adaptive?.win_rate ?? (trades.length > 0 ? (winsCount / trades.length) * 100 : 0);
+  const totalPnl = adaptive?.total_pnl ?? trades.reduce((s, t) => s + t.pnl, 0);
+  const winsPnl = trades.filter((t) => t.result === "win").reduce((s, t) => s + t.pnl, 0);
+  const lossesPnl = trades.filter((t) => t.result === "loss").reduce((s, t) => s + t.pnl, 0);
+  const dailyPnlVal = risk?.daily_pnl ?? 0;
 
   const streak = useMemo(() => {
     if (trades.length === 0) return { count: 0, win: true };
@@ -299,45 +304,39 @@ function AutoTraderPage() {
   return (
     <div className="space-y-6 pb-12 w-full max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 overflow-hidden">
       
-      {/* ── TOP FAVORABLE MARKET BANNER & TICKERS ── */}
+      {/* ── TOP STATUS BANNER ── */}
       <div className="rounded-2xl border border-slate-700/80 bg-card/90 p-3 flex flex-wrap items-center justify-between gap-3 text-xs w-full max-w-full shadow-md">
         <div className="flex flex-wrap items-center gap-2 min-w-0">
-          <span className="font-bold text-cyan-400 flex items-center gap-1.5 shrink-0 text-xs uppercase tracking-wider">
-            <span className="h-2 w-2 rounded-full bg-cyan-400 animate-pulse" />
-            Marché favorable :
+          <span className={cn("font-bold flex items-center gap-1.5 shrink-0 text-xs uppercase tracking-wider", connected ? "text-cyan-400" : "text-rose-400")}>
+            <span className={cn("h-2 w-2 rounded-full", connected ? "bg-cyan-400 animate-pulse" : "bg-rose-400")} />
+            {connected ? "Moteur connecté" : "Moteur hors ligne"}
           </span>
-          <div className="flex flex-wrap items-center gap-1.5 min-w-0">
-            <span className="rounded-lg bg-emerald-500/15 border border-emerald-500/30 px-2.5 py-1 font-mono font-bold text-emerald-300 flex items-center gap-1 text-[11px]">
-              <ArrowDownRight className="h-3.5 w-3.5 shrink-0 text-emerald-400" /> EUR/JPY 76% · 3/4 TF
+          {analysis && (
+            <span className={cn("rounded-lg border px-2.5 py-1 font-mono font-bold flex items-center gap-1 text-[11px]", analysis.global_trend === "BUY" ? "bg-emerald-500/15 border-emerald-500/30 text-emerald-300" : analysis.global_trend === "SELL" ? "bg-rose-500/15 border-rose-500/30 text-rose-300" : "bg-muted/20 border-slate-700/60 text-muted-foreground")}>
+              {analysis.global_trend === "BUY" ? <ArrowUpRight className="h-3.5 w-3.5 shrink-0" /> : analysis.global_trend === "SELL" ? <ArrowDownRight className="h-3.5 w-3.5 shrink-0" /> : null}
+              {config?.symbol ?? "Boom 1000"} {analysis.global_trend} · {analysis.trend_alignment}/3 TF
             </span>
-            <span className="rounded-lg bg-purple-500/15 border border-purple-500/30 px-2.5 py-1 font-mono font-bold text-purple-300 flex items-center gap-1 text-[11px]">
-              <ArrowDownRight className="h-3.5 w-3.5 shrink-0 text-purple-400" /> ETH/USD 79% · 4/4 TF
-            </span>
-          </div>
+          )}
         </div>
 
         <button 
           onClick={toggleEngine}
-          className="text-xs font-bold text-emerald-400 hover:text-emerald-300 flex items-center gap-1 transition-colors ml-auto shrink-0"
+          className={cn("text-xs font-bold flex items-center gap-1 transition-colors ml-auto shrink-0", isRunning ? "text-rose-400 hover:text-rose-300" : "text-emerald-400 hover:text-emerald-300")}
         >
-          Lancer l'auto-trader &rarr;
+          {isRunning ? "Arrêter l'auto-trader" : "Lancer l'auto-trader"} &rarr;
         </button>
       </div>
 
       {/* Ticker Bar */}
       <div className="flex items-center justify-between border-b-2 border-slate-700/60 pb-2 gap-4 w-full min-w-0">
         <div className="flex items-center gap-6 text-[11px] font-mono text-muted-foreground overflow-x-auto no-scrollbar flex-1 min-w-0 pr-2">
-          <span className="hover:text-foreground cursor-pointer font-bold text-emerald-400 shrink-0">BOOM 1000 —</span>
-          <span className="hover:text-foreground cursor-pointer shrink-0">CRASH 1000 —</span>
-          <span className="hover:text-foreground cursor-pointer shrink-0">VOLATILITY 75 —</span>
-          <span className="hover:text-foreground cursor-pointer shrink-0">BTC/USD —</span>
-          <span className="hover:text-foreground cursor-pointer shrink-0">ETH/USD —</span>
-          <span className="hover:text-foreground cursor-pointer shrink-0">EUR/USD —</span>
-          <span className="hover:text-foreground cursor-pointer shrink-0">GBP/USD —</span>
+          <span className={cn("shrink-0 font-bold", analysis?.global_trend === "BUY" ? "text-emerald-400" : analysis?.global_trend === "SELL" ? "text-rose-400" : "text-muted-foreground")}>
+            {config?.symbol ?? "BOOM 1000"} {analysis ? analysis.price.toFixed(2) : "—"}
+          </span>
         </div>
-        <span className="flex items-center gap-1.5 text-emerald-400 font-sans font-bold text-[10px] uppercase tracking-wider shrink-0 pl-3 bg-background border-l-2 border-slate-700/60">
-          <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-ping" />
-          TEMPS RÉEL
+        <span className={cn("flex items-center gap-1.5 font-sans font-bold text-[10px] uppercase tracking-wider shrink-0 pl-3 bg-background border-l-2 border-slate-700/60", connected ? "text-emerald-400" : "text-rose-400")}>
+          <span className={cn("h-1.5 w-1.5 rounded-full", connected ? "bg-emerald-400 animate-ping" : "bg-rose-400")} />
+          {connected ? "TEMPS RÉEL" : "HORS LIGNE"}
         </span>
       </div>
 
@@ -351,13 +350,13 @@ function AutoTraderPage() {
             </span>
           </div>
           <p className="text-xs sm:text-sm text-muted-foreground leading-snug">
-            Algorithme multi-indicateurs · 4 timeframes · Patterns japonais & Détection de spikes
+            Algorithme multi-indicateurs · 3 timeframes · Patterns japonais & Détection de spikes
           </p>
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
-          <span className="rounded-xl bg-emerald-500/10 border border-emerald-500/40 px-3 py-1.5 text-xs font-bold text-emerald-400 flex items-center gap-1.5">
-            <ShieldCheck className="h-4 w-4" /> MODE PRUDENT
+          <span className={cn("rounded-xl border px-3 py-1.5 text-xs font-bold flex items-center gap-1.5", config?.ia_mode === "automatic" ? "bg-rose-500/10 border-rose-500/40 text-rose-400" : config?.ia_mode === "semi-auto" ? "bg-amber-500/10 border-amber-500/40 text-amber-400" : "bg-emerald-500/10 border-emerald-500/40 text-emerald-400")}>
+            <ShieldCheck className="h-4 w-4" /> {config?.ia_mode === "automatic" ? "MODE AUTO" : config?.ia_mode === "semi-auto" ? "SEMI-AUTO" : "MODE PRUDENT"}
           </span>
           <Button variant="outline" size="sm" className="rounded-xl gap-1.5 text-xs font-bold border-slate-700/70">
             <Eye className="h-4 w-4 text-cyan-400" /> APERÇU LIVE
@@ -382,7 +381,7 @@ function AutoTraderPage() {
               ${totalBalance.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </div>
             <div className="text-[10px] font-bold text-cyan-400/80 uppercase tracking-wider mt-0.5">
-              BROKER DERIV · METATRADER 5
+              {isLive ? "BROKER DERIV · METATRADER 5" : "MODE SIMULATION"}
             </div>
           </div>
           {/* Authentic Deriv MT5 account sub-metrics */}
@@ -415,8 +414,8 @@ function AutoTraderPage() {
             <div className={cn("text-2xl sm:text-3xl font-black font-mono tracking-tight", (risk?.daily_pnl ?? 0) >= 0 ? "text-emerald-400" : "text-rose-400")}>
               {(risk?.daily_pnl ?? 0) >= 0 ? "+" : ""}${(risk?.daily_pnl ?? 0).toFixed(2)}
             </div>
-            <div className="text-[11px] text-emerald-300/90 mt-0.5 font-medium">
-              Gains $0.00 · Pertes $0.00
+            <div className={cn("text-[11px] mt-0.5 font-medium", dailyPnlVal >= 0 ? "text-emerald-300/90" : "text-rose-300/90")}>
+              Gains ${winsPnl.toFixed(2)} · Pertes ${lossesPnl.toFixed(2)}
             </div>
           </div>
           <div className="pt-2 border-t border-emerald-500/30 text-[10px] text-muted-foreground leading-tight">
@@ -438,7 +437,7 @@ function AutoTraderPage() {
               {winRateVal.toFixed(0)}%
             </div>
             <div className="text-[11px] text-muted-foreground mt-0.5">
-              1 gagnés · 6 perdus
+              {winsCount} gagnés · {lossesCount} perdus
             </div>
           </div>
           <div className="pt-2 border-t border-slate-700/60 text-[10px] text-muted-foreground leading-tight">
@@ -460,7 +459,7 @@ function AutoTraderPage() {
               {dailyLossPct.toFixed(0)}%
             </div>
             <div className="text-[11px] text-muted-foreground mt-0.5 font-mono">
-              $0.00 / $20
+              ${Math.abs(risk?.daily_loss ?? 0).toFixed(2)} / ${dailyLossLimitAbs.toFixed(2)}
             </div>
           </div>
           <div className="pt-2 border-t border-slate-700/60 text-[10px] text-muted-foreground leading-tight">
@@ -573,18 +572,18 @@ function AutoTraderPage() {
               <div className="w-full space-y-2 text-xs">
                 <div className="flex items-center justify-between rounded-xl bg-background/50 border border-slate-700/50 px-3.5 py-2.5">
                   <span className="uppercase tracking-wider text-muted-foreground font-semibold text-[10px]">STATUT</span>
-                  <span className={cn("font-bold flex items-center gap-1.5 text-[11px]", isRunning ? "text-emerald-400" : "text-emerald-400")}>
-                    <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
-                    Actif sur le serveur
+                  <span className={cn("font-bold flex items-center gap-1.5 text-[11px]", isRunning ? "text-emerald-400" : "text-muted-foreground")}>
+                    <span className={cn("h-2 w-2 rounded-full shrink-0", isRunning ? "bg-emerald-400 animate-pulse" : "bg-muted-foreground")} />
+                    {isRunning ? "Actif sur le serveur" : "En arrêt"}
                   </span>
                 </div>
                 <div className="flex items-center justify-between rounded-xl bg-background/50 border border-slate-700/50 px-3.5 py-2.5">
                   <span className="uppercase tracking-wider text-muted-foreground font-semibold text-[10px]">MODE</span>
-                  <span className="font-bold text-emerald-400 text-[11px]">🎮 Démo</span>
+                  <span className={cn("font-bold text-[11px]", isLive ? "text-emerald-400" : "text-amber-400")}>{isLive ? "⚡ Live" : "🧪 Simulation"}</span>
                 </div>
                 <div className="flex items-center justify-between rounded-xl bg-background/50 border border-slate-700/50 px-3.5 py-2.5">
                   <span className="uppercase tracking-wider text-muted-foreground font-semibold text-[10px]">PAIRES</span>
-                  <span className="font-bold text-foreground text-[11px]">11 surveillées</span>
+                  <span className="font-bold text-foreground text-[11px]">{config?.symbol ?? "Boom 1000 Index"}</span>
                 </div>
                 <div className="flex items-center justify-between rounded-xl bg-background/50 border border-slate-700/50 px-3.5 py-2.5">
                   <span className="uppercase tracking-wider text-muted-foreground font-semibold text-[10px]">DERIV MT5</span>
@@ -613,22 +612,22 @@ function AutoTraderPage() {
               Tourne sur le serveur 24h/24 — même téléphone verrouillé ou app fermée.
             </p>
 
-            <div className="rounded-xl border border-rose-900/50 bg-rose-950/30 p-2.5 space-y-1">
-              <div className="text-[11px] font-bold text-rose-300 flex items-center gap-1.5">
-                <span className="h-1.5 w-1.5 rounded-full bg-rose-400 shrink-0" />
-                <span>Défavorable 0.0% vs seuil 54.1%</span>
+            <div className={cn("rounded-xl border p-2.5 space-y-1", dailyPnlVal < 0 ? "border-rose-900/50 bg-rose-950/30" : "border-emerald-900/50 bg-emerald-950/30")}>
+              <div className={cn("text-[11px] font-bold flex items-center gap-1.5", dailyPnlVal < 0 ? "text-rose-300" : "text-emerald-300")}>
+                <span className={cn("h-1.5 w-1.5 rounded-full shrink-0", dailyPnlVal < 0 ? "bg-rose-400" : "bg-emerald-400")} />
+                <span>P&L jour: {dailyPnlVal >= 0 ? "+" : ""}{dailyPnlVal.toFixed(2)}$</span>
               </div>
-              <div className="text-[9px] text-muted-foreground">il y a 6h</div>
+              <div className="text-[9px] text-muted-foreground">Cycle #{status?.cycle ?? 0}</div>
             </div>
 
             <div className="space-y-1.5 pt-2 border-t border-slate-700/60 text-xs">
               <div className="flex items-center justify-between">
                 <span className="text-muted-foreground text-[10px] uppercase font-semibold">STATUT</span>
-                <span className="font-bold text-emerald-400 text-[11px]">● Actif sur le serveur</span>
+                <span className={cn("font-bold text-[11px]", isRunning ? "text-emerald-400" : "text-muted-foreground")}>{isRunning ? "● Actif" : "● Arrêté"}</span>
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-muted-foreground text-[10px] uppercase font-semibold">P&L JOUR</span>
-                <span className="font-mono font-bold text-emerald-400 text-[11px]">+$0.00 · 0 trade</span>
+                <span className={cn("font-mono font-bold text-[11px]", dailyPnlVal >= 0 ? "text-emerald-400" : "text-rose-400")}>{dailyPnlVal >= 0 ? "+" : ""}{dailyPnlVal.toFixed(2)}$ · {tradesToday} trade{tradesToday !== 1 ? "s" : ""}</span>
               </div>
             </div>
           </div>
@@ -707,8 +706,8 @@ function AutoTraderPage() {
                 <Activity className="h-5 w-5 text-emerald-400 shrink-0" />
                 <h2 className="text-sm font-bold tracking-wide uppercase text-foreground">DASHBOARD BOT</h2>
               </div>
-              <span className={cn("px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase border shrink-0", isRunning ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30" : "bg-emerald-500/15 text-emerald-400 border-emerald-500/30")}>
-                ● SCANNER ACTIF
+              <span className={cn("px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase border shrink-0", isRunning ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30" : "bg-muted/20 text-muted-foreground border-slate-700/60")}>
+                {isRunning ? "● SCANNER ACTIF" : "● EN VEILLE"}
               </span>
             </div>
 
@@ -718,7 +717,7 @@ function AutoTraderPage() {
               <div className="space-y-3 min-w-0">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold uppercase text-muted-foreground">COURBE P&L AUJOURD'HUI</span>
-                  <span className="text-xl font-mono font-black text-emerald-400">+$0.00</span>
+                  <span className={cn("text-xl font-mono font-black", dailyPnlVal >= 0 ? "text-emerald-400" : "text-rose-400")}>{dailyPnlVal >= 0 ? "+" : ""}{dailyPnlVal.toFixed(2)}</span>
                 </div>
 
                 {positions.length > 0 || trades.length > 0 ? (
@@ -750,7 +749,7 @@ function AutoTraderPage() {
                     <span className="text-muted-foreground flex items-center gap-1 text-[10px] uppercase tracking-wider font-bold">
                       <ShieldAlert className="h-3 w-3 text-rose-400 shrink-0" /> LIMITE PERTE
                     </span>
-                    <span className="font-mono font-bold text-foreground text-xs">$0.00 / $20</span>
+                    <span className="font-mono font-bold text-foreground text-xs">${Math.abs(risk?.daily_loss ?? 0).toFixed(2)} / ${dailyLossLimitAbs.toFixed(2)}</span>
                   </div>
                   {/* High contrast 10 dots indicator */}
                   <div className="flex items-center gap-1 py-1 w-full">
@@ -768,7 +767,7 @@ function AutoTraderPage() {
                   </div>
                   <div className="flex items-center justify-between text-[9px] text-muted-foreground">
                     <span>MARGE</span>
-                    <span className="font-bold text-rose-400 font-mono">MAX -$20</span>
+                    <span className="font-bold text-rose-400 font-mono">MAX -${dailyLossLimitAbs.toFixed(2)}</span>
                   </div>
                 </div>
 
@@ -778,7 +777,7 @@ function AutoTraderPage() {
                     <span className="text-muted-foreground flex items-center gap-1 text-[10px] uppercase tracking-wider font-bold">
                       <Target className="h-3 w-3 text-emerald-400 shrink-0" /> OBJECTIF GAIN
                     </span>
-                    <span className="font-mono font-bold text-foreground text-xs">$0.00 / $200</span>
+                    <span className="font-mono font-bold text-foreground text-xs">${Math.max(0, dailyPnlVal).toFixed(2)} / ${(dailyLossLimitAbs * 10).toFixed(2)}</span>
                   </div>
                   {/* High contrast 10 dots indicator */}
                   <div className="flex items-center gap-1 py-1 w-full">
@@ -787,7 +786,7 @@ function AutoTraderPage() {
                         key={i}
                         className={cn(
                           "h-2.5 flex-1 rounded-sm transition-all border",
-                          i < 0
+                          i < Math.ceil((Math.max(0, dailyPnlVal) / (dailyLossLimitAbs * 10)) * 10)
                             ? "bg-emerald-400 border-emerald-300 shadow-[0_0_8px_rgba(52,211,153,0.5)]"
                             : "bg-slate-800/80 border-slate-700/60"
                         )}
@@ -796,7 +795,7 @@ function AutoTraderPage() {
                   </div>
                   <div className="flex items-center justify-between text-[9px] text-muted-foreground">
                     <span>CIBLE</span>
-                    <span className="font-bold text-emerald-400 font-mono">+ $200</span>
+                    <span className="font-bold text-emerald-400 font-mono">+ ${(dailyLossLimitAbs * 10).toFixed(2)}</span>
                   </div>
                 </div>
 
@@ -989,15 +988,15 @@ function AutoTraderPage() {
               </div>
               <div className="grid grid-cols-3 gap-2">
                 <div className="rounded-xl bg-background/50 border border-slate-700/60 p-3 text-center">
-                  <div className="text-2xl font-black text-emerald-400">1</div>
+                  <div className="text-2xl font-black text-emerald-400">{winsCount}</div>
                   <div className="text-[10px] uppercase tracking-wider text-muted-foreground mt-1">Gagnés</div>
                 </div>
                 <div className="rounded-xl bg-background/50 border border-slate-700/60 p-3 text-center">
-                  <div className="text-2xl font-black text-rose-400">6</div>
+                  <div className="text-2xl font-black text-rose-400">{lossesCount}</div>
                   <div className="text-[10px] uppercase tracking-wider text-muted-foreground mt-1">Perdus</div>
                 </div>
                 <div className="rounded-xl bg-background/50 border border-slate-700/60 p-3 text-center">
-                  <div className="text-2xl font-black text-foreground">14%</div>
+                  <div className="text-2xl font-black text-foreground">{winRateVal.toFixed(0)}%</div>
                   <div className="text-[10px] uppercase tracking-wider text-muted-foreground mt-1">Win rate</div>
                 </div>
               </div>

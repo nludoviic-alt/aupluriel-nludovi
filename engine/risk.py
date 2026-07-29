@@ -99,6 +99,15 @@ class RiskEngine:
             self.state.daily_pnl = 0.0
             self.state.daily_loss = 0.0
 
+        # Kill switch automatique si limite de perte quotidienne atteinte
+        daily_limit = self.config.daily_loss_limit(self.state.balance)
+        if self.state.daily_loss >= daily_limit and not self.state.trading_halted:
+            self.state.trading_halted = True
+            self.state.halt_reason = (
+                f"LIMITE PERTE QUOTIDIENNE ATTEINTE — {self.state.daily_loss:.2f} / {daily_limit:.2f}"
+            )
+            self.logger.risk(self.state.halt_reason)
+
     def record_trade_result(self, result: str, volume: float):
         """Enregistre le résultat du dernier trade pour anti-Martingale."""
         if result == "loss":

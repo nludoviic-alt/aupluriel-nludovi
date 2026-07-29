@@ -31,7 +31,7 @@ function CompteDerivPage() {
   });
   const [formLoaded, setFormLoaded] = useState(false);
 
-  // Charge les champs sauvegardés (hors mot de passe) après le montage côté client.
+  // Charge les champs sauvegardés (y compris mot de passe) après le montage côté client.
   useEffect(() => {
     try {
       const raw = window.localStorage.getItem(SAVED_FIELDS_KEY);
@@ -41,7 +41,7 @@ function CompteDerivPage() {
           ...f,
           ...saved,
           path: saved.path || DEFAULT_MT5_PATH,
-          password: "",
+          password: saved.password || "",
         }));
       }
     } catch {
@@ -52,12 +52,12 @@ function CompteDerivPage() {
 
   useEffect(() => {
     if (!formLoaded) return;
-    const { account_type, login, server, path } = form;
+    const { account_type, login, password, server, path } = form;
     window.localStorage.setItem(
       SAVED_FIELDS_KEY,
-      JSON.stringify({ account_type, login, server, path }),
+      JSON.stringify({ account_type, login, password, server, path }),
     );
-  }, [formLoaded, form.account_type, form.login, form.server, form.path]);
+  }, [formLoaded, form.account_type, form.login, form.password, form.server, form.path]);
 
   // "connected" ne veut dire que le backend répond — ça ne prouve pas une vraie
   // session MT5. On ne considère un compte réellement lié qu'en sortant du mode simulation.
@@ -206,7 +206,7 @@ function CompteDerivPage() {
                 className="w-full h-9 rounded-xl border border-border/50 bg-background/60 px-3 text-xs font-mono font-bold text-foreground focus:outline-none focus:border-primary/60"
               />
               <p className="text-[10px] text-muted-foreground">
-                Non mémorisé — à ressaisir à chaque connexion (login, serveur et chemin sont sauvegardés automatiquement).
+                Sauvegardé localement et chiffré dans le backend (.env).
               </p>
             </div>
 

@@ -84,8 +84,7 @@ app = FastAPI(title="Au Pluriel Trading Engine", version="1.0.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:8081", "http://localhost:8080", "http://127.0.0.1:8081"],
-    allow_origin_regex=r"http://(localhost|127\.0\.0\.1|\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}):(8080|8081)",
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -425,14 +424,18 @@ async def websocket_endpoint(ws: WebSocket):
         # Envoie l'état initial
         await ws.send_json({"event": "status", **get_bot().status()})
         while True:
-            # Garde la connexion ouverte
-            data = await ws.receive_text()
+            # Garde la connexion ouverte — timeout de 60s pour détecter les clients morts
+            data = await asyncio.wait_for(ws.receive_text(), timeout=60.0)
             msg = json.loads(data)
             if msg.get("type") == "ping":
                 await ws.send_json({"type": "pong"})
+    except asyncio.TimeoutError:
+        pass
     except WebSocketDisconnect:
-        ws_clients.remove(ws)
+        pass
     except Exception:
+        pass
+    finally:
         if ws in ws_clients:
             ws_clients.remove(ws)
 

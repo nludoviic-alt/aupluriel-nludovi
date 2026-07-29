@@ -168,9 +168,13 @@ class TradingBot:
         elif self.calendar and self.calendar.should_reduce_size():
             size_multiplier *= 0.5
 
-        # 8. Met à jour l'état du risque
-        account = self.mt5.get_account_info()
+        # 8. Vérifie les positions pour SL/TP (avant update risque pour éviter P&L flottant irréaliste)
         positions = self.mt5.get_positions()
+        self._check_positions(positions)
+        positions = self.mt5.get_positions()  # re-fetch après fermetures éventuelles
+
+        # 9. Met à jour l'état du risque
+        account = self.mt5.get_account_info()
         floating_pnl = sum(p.profit for p in positions)
         realized_pnl = getattr(self.mt5, '_sim_realized_pnl', 0.0) if self.mt5._sim_mode else 0.0
         daily_pnl = floating_pnl + realized_pnl
@@ -181,7 +185,7 @@ class TradingBot:
             daily_pnl=daily_pnl,
         )
 
-        # 9. Exécution — utilise le signal stratégie si disponible, sinon décision classique
+        # 10. Exécution — utilise le signal stratégie si disponible, sinon décision classique
         order_result = None
         can_trade = (decision.would_trade or strategy_signal) and not self.risk.state.trading_halted and not should_pause
 
@@ -241,7 +245,7 @@ class TradingBot:
                                 f"confiance: {confidence:.1f}%, volume: {volume}, SL: {sl:.2f}, TP: {tp:.2f}"
                             )
 
-        # 10. Gestion des positions (trailing stop, break-even, fermeture partielle)
+        # 11. Gestion des positions (trailing stop, break-even, fermeture partielle)
         if self.position_manager and positions:
             current_price = self.mt5.get_current_price()
             m15_ind = analysis.indicators.get(Timeframe.M15.value)
@@ -256,9 +260,6 @@ class TradingBot:
                 if actions.get("partial_close"):
                     pc = actions["partial_close"]
                     self.logger.info(f"Position {pos.ticket}: fermeture partielle niveau {pc['level']} — {pc['volume']} lots à {pc['price']:.4f}")
-
-        # 11. Vérifie les positions pour SL/TP
-        self._check_positions(positions)
 
         # 12. Notifie les callbacks
         self._notify("cycle", {
@@ -319,6 +320,14 @@ class TradingBot:
 
     def _close_and_record(self, pos: Position, result: str):
         """Ferme une position (mode simulation) et enregistre le résultat."""
+        if result == "loss":
+            close_price = pos.stop_loss
+        else:
+            close_price = pos.take_profit
+        if pos.direction == "BUY":
+            pos.profit = (close_price - pos.entry_price) * pos.volume
+        else:
+            pos.profit = (pos.entry_price - close_price) * pos.volume
         self.mt5.close_position(pos.ticket)
         self._record_trade_result(pos, result)
 
