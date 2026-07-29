@@ -62,12 +62,15 @@ class MT5Connector:
             MT5_TIMEFRAMES[Timeframe.M15] = mt5.TIMEFRAME_M15
             MT5_TIMEFRAMES[Timeframe.H1] = mt5.TIMEFRAME_H1
 
-            if not mt5.initialize(
-                login=self.config.mt5_login,
-                password=self.config.mt5_password,
-                server=self.config.mt5_server,
-                path=self.config.mt5_path or None,
-            ):
+            init_kwargs = {
+                "login": self.config.mt5_login,
+                "password": self.config.mt5_password,
+                "server": self.config.mt5_server,
+            }
+            if self.config.mt5_path:
+                init_kwargs["path"] = self.config.mt5_path
+
+            if not mt5.initialize(**init_kwargs):
                 self.logger.warn(f"MT5 initialize échoué: {mt5.last_error()}")
                 self._enable_simulation()
                 return True  # Simulation active
@@ -509,3 +512,15 @@ class MT5Connector:
         }
         result = mt5.order_send(request)
         return result and result.retcode == mt5.TRADE_RETCODE_DONE
+
+    def get_deal_profit(self, ticket: int) -> float:
+        """Récupère le profit net (profit + commission + swap) d'une position fermée,
+        via l'historique des deals MT5. Utilisé pour détecter le résultat d'une
+        position fermée par le broker (SL/TP touché, ou fermeture manuelle)."""
+        if self._sim_mode:
+            return 0.0
+
+        deals = self.mt5.history_deals_get(position=ticket)
+        if not deals:
+            return 0.0
+        return sum(d.profit + d.commission + d.swap for d in deals)

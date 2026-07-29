@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { toast } from "sonner";
 import {
   CreditCard, Wifi, WifiOff, CheckCircle2, XCircle,
   Server, Key, Shield, TestTube, ArrowUpRight, Save,
@@ -13,15 +14,55 @@ export const Route = createFileRoute("/compte-deriv")({
   component: CompteDerivPage,
 });
 
+const SAVED_FIELDS_KEY = "au-pluriel-mt5-form";
+// Terminal générique détecté sur cette machine — nécessaire pour éviter que la
+// librairie Python s'attache par erreur à un autre terminal MT5 déjà ouvert
+// (ex: un terminal d'un autre broker), ce qui cause un timeout IPC.
+const DEFAULT_MT5_PATH = "C:\\Program Files\\MetaTrader 5\\terminal64.exe";
+
 function CompteDerivPage() {
-  const { status, connected, apiCall } = useEngine();
+  const { status, connected, apiCall, loading } = useEngine();
   const [form, setForm] = useState({
     account_type: "demo",
     login: "10293847",
+    password: "",
     server: "Deriv-Demo",
-    bridge_url: "",
-    bridge_key: "",
+    path: DEFAULT_MT5_PATH,
   });
+  const [formLoaded, setFormLoaded] = useState(false);
+
+  // Charge les champs sauvegardés (hors mot de passe) après le montage côté client.
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(SAVED_FIELDS_KEY);
+      if (raw) {
+        const saved = JSON.parse(raw);
+        setForm((f) => ({
+          ...f,
+          ...saved,
+          path: saved.path || DEFAULT_MT5_PATH,
+          password: "",
+        }));
+      }
+    } catch {
+      // localStorage indisponible ou données corrompues — on garde les valeurs par défaut
+    }
+    setFormLoaded(true);
+  }, []);
+
+  useEffect(() => {
+    if (!formLoaded) return;
+    const { account_type, login, server, path } = form;
+    window.localStorage.setItem(
+      SAVED_FIELDS_KEY,
+      JSON.stringify({ account_type, login, server, path }),
+    );
+  }, [formLoaded, form.account_type, form.login, form.server, form.path]);
+
+  // "connected" ne veut dire que le backend répond — ça ne prouve pas une vraie
+  // session MT5. On ne considère un compte réellement lié qu'en sortant du mode simulation.
+  const mt5Live = connected && status ? !status.sim_mode : false;
+
   const [testResult, setTestResult] = useState<{
     account: boolean;
     balance: boolean;
@@ -32,12 +73,32 @@ function CompteDerivPage() {
   const [testing, setTesting] = useState(false);
 
   const handleConnect = async () => {
-    await apiCall("mt5/connect", "POST", {
+    if (!form.password) {
+      toast.error("Entrez votre mot de passe MT5 avant de vous connecter.");
+      return;
+    }
+    // Nettoie les artefacts de copier-coller (guillemets, espaces) qui font
+    // échouer mt5.initialize() avec "Invalid path argument".
+    const cleanPath = form.path.trim().replace(/^["']|["']$/g, "");
+    const result = await apiCall("mt5/connect", "POST", {
       login: parseInt(form.login) || 0,
-      password: "",
-      server: form.server,
-      path: "",
+      password: form.password,
+      server: form.server.trim(),
+      path: cleanPath,
     });
+    if (!result) {
+      toast.error("Échec de la requête — le moteur (backend) est-il démarré sur le port 8000 ?");
+      return;
+    }
+    if (result.sim_mode) {
+      toast.error(
+        "Connexion MT5 refusée — repassé en mode simulation. Vérifiez le login, le mot de passe et le nom du serveur.",
+      );
+    } else {
+      toast.success(
+        `Connecté à MT5 — compte ${result.account?.login}, solde ${result.account?.balance} ${result.account?.currency}`,
+      );
+    }
   };
 
   const handleTest = async () => {
@@ -84,10 +145,14 @@ function CompteDerivPage() {
 
           <div className={cn(
             "flex items-center gap-2 rounded-full border px-4 py-2 text-xs font-bold uppercase tracking-wider relative z-10",
-            connected ? "border-success/30 bg-success/15 text-success" : "border-destructive/30 bg-destructive/15 text-destructive"
+            mt5Live ? "border-success/30 bg-success/15 text-success" : "border-destructive/30 bg-destructive/15 text-destructive"
           )}>
-            {connected ? <Wifi className="h-4 w-4" /> : <WifiOff className="h-4 w-4" />}
-            {connected ? "MT5 Connecté (Deriv Live)" : "Non Connecté"}
+            {mt5Live ? <Wifi className="h-4 w-4" /> : <WifiOff className="h-4 w-4" />}
+            {mt5Live
+              ? `MT5 Connecté — ${status?.account.server}`
+              : connected
+                ? "Moteur en ligne — Simulation (MT5 non connecté)"
+                : "Non Connecté"}
           </div>
         </div>
       </div>
@@ -134,20 +199,59 @@ function CompteDerivPage() {
             </div>
 
             <div className="space-y-1">
-              <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Serveur Deriv</label>
-              <select
-                value={form.server}
-                onChange={(e) => setForm({ ...form, server: e.target.value })}
-                className="w-full h-9 rounded-xl border border-border/50 bg-background/60 px-3 text-xs font-bold text-foreground"
-              >
-                <option value="Deriv-Demo">Deriv-Demo</option>
-                <option value="Deriv-Server">Deriv-Server</option>
-                <option value="Deriv-Server-02">Deriv-Server-02</option>
-              </select>
+              <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Mot de Passe MT5 (Investisseur ou Trading)</label>
+              <input
+                type="password"
+                value={form.password}
+                onChange={(e) => setForm({ ...form, password: e.target.value })}
+                autoComplete="off"
+                className="w-full h-9 rounded-xl border border-border/50 bg-background/60 px-3 text-xs font-mono font-bold text-foreground focus:outline-none focus:border-primary/60"
+              />
+              <p className="text-[10px] text-muted-foreground">
+                Non mémorisé — à ressaisir à chaque connexion (login, serveur et chemin sont sauvegardés automatiquement).
+              </p>
             </div>
 
-            <Button onClick={handleConnect} className="w-full text-xs font-bold h-10 bg-primary text-primary-foreground shadow-[var(--shadow-glow-orange)] hover:opacity-90 rounded-xl">
-              Se Connecter à Deriv MT5
+            <div className="space-y-1">
+              <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Serveur Deriv</label>
+              <input
+                type="text"
+                list="deriv-servers"
+                value={form.server}
+                onChange={(e) => setForm({ ...form, server: e.target.value })}
+                placeholder="Ex: DerivSVG-Server"
+                className="w-full h-9 rounded-xl border border-border/50 bg-background/60 px-3 text-xs font-mono font-bold text-foreground focus:outline-none focus:border-primary/60"
+              />
+              <datalist id="deriv-servers">
+                <option value="Deriv-Demo" />
+                <option value="Deriv-Server" />
+                <option value="Deriv-Server-02" />
+                <option value="DerivSVG-Server" />
+                <option value="DerivBVI-Server" />
+                <option value="DerivCorp-Server" />
+              </datalist>
+              <p className="text-[10px] text-muted-foreground">
+                Utilisez le nom exact affiché dans votre terminal MT5 (Fichier → Ouvrir un compte, ou infos du compte).
+              </p>
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Chemin Terminal MT5 (optionnel)</label>
+              <input
+                type="text"
+                value={form.path}
+                onChange={(e) => setForm({ ...form, path: e.target.value })}
+                placeholder="C:\Program Files\MetaTrader 5\terminal64.exe"
+                className="w-full h-9 rounded-xl border border-border/50 bg-background/60 px-3 text-xs font-mono text-foreground focus:outline-none focus:border-primary/60"
+              />
+            </div>
+
+            <Button
+              onClick={handleConnect}
+              disabled={loading}
+              className="w-full text-xs font-bold h-10 bg-primary text-primary-foreground shadow-[var(--shadow-glow-orange)] hover:opacity-90 rounded-xl disabled:opacity-50"
+            >
+              {loading ? "Connexion en cours..." : "Se Connecter à Deriv MT5"}
             </Button>
           </div>
         </div>

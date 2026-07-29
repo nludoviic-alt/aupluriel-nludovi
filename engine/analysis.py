@@ -231,7 +231,7 @@ class AnalysisEngine:
         # Volatilité excessive : ATR > 2× la moyenne
         avg_vol = np.mean(volatilities) if volatilities else 0
         max_vol = max(volatilities) if volatilities else 0
-        volatility_high = max_vol > avg_vol * 2.0 if avg_vol > 0 else False
+        volatility_high = bool(max_vol > avg_vol * 2.0) if avg_vol > 0 else False
 
         # Support/résistance les plus proches du prix
         if supports and resistances and price > 0:

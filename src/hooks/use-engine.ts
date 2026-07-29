@@ -151,11 +151,14 @@ export function useEngine() {
 
   const apiCall = useCallback(async (endpoint: string, method = "POST", body?: unknown) => {
     setLoading(true);
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 20000);
     try {
       const res = await fetch(`${API_BASE}/${endpoint}`, {
         method,
         headers: body ? { "Content-Type": "application/json" } : undefined,
         body: body ? JSON.stringify(body) : undefined,
+        signal: controller.signal,
       });
       if (res.ok) {
         const data = await res.json();
@@ -165,6 +168,7 @@ export function useEngine() {
     } catch (e) {
       console.error(`API ${endpoint} failed:`, e);
     } finally {
+      clearTimeout(timeout);
       setLoading(false);
     }
   }, [fetchStatus]);

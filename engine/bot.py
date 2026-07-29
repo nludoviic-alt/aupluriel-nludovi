@@ -48,6 +48,8 @@ class TradingBot:
         self._last_regime: Optional[RegimeResult] = None
         self._last_strategy_signal: Optional[StrategySignal] = None
         self._callbacks: List[Callable] = []
+        self._known_tickets: set = set()
+        self._tracked_positions: Dict[int, Position] = {}
 
     def add_callback(self, cb: Callable):
         """Ajoute un callback appelé à chaque cycle (pour WebSocket/API)."""
@@ -201,9 +203,13 @@ class TradingBot:
                 strategy_name = "trend_following"
 
             if direction != SignalDirection.NEUTRAL:
+                # Dimensionne le volume sur la distance RÉELLE du stop (sl) qui sera
+                # effectivement envoyé à l'ordre — sinon le risque réel diverge du
+                # risque annoncé quand une stratégie utilise un stop différent de l'ATR par défaut.
                 risk_check = self.risk.check(
                     type("D", (), {"direction": direction, "confidence": confidence})(),
-                    atr, analysis.price
+                    atr, analysis.price,
+                    stop_loss_price=sl,
                 )
                 if risk_check.approved:
                     volume = risk_check.volume * size_multiplier
@@ -271,11 +277,13 @@ class TradingBot:
         })
 
     def _check_positions(self, positions: List[Position]):
-        """Vérifie si des positions ont atteint SL/TP et enregistre les résultats."""
-        current_price = self.mt5.get_current_price()
-        for pos in positions:
-            # En simulation, vérifie si SL/TP atteint
-            if self.mt5._sim_mode:
+        """Vérifie si des positions ont été fermées (SL/TP ou par le broker) et enregistre les résultats."""
+        current_tickets = {p.ticket for p in positions}
+
+        if self.mt5._sim_mode:
+            # En simulation, c'est le bot lui-même qui décide de fermer sur SL/TP.
+            current_price = self.mt5.get_current_price()
+            for pos in positions:
                 if pos.direction == "BUY":
                     if current_price <= pos.stop_loss:
                         self._close_and_record(pos, "loss")
@@ -286,10 +294,30 @@ class TradingBot:
                         self._close_and_record(pos, "loss")
                     elif current_price <= pos.take_profit:
                         self._close_and_record(pos, "win")
+        else:
+            # En réel, le broker ferme lui-même sur SL/TP — on détecte la fermeture en
+            # comparant les positions ouvertes d'un cycle à l'autre, et on récupère le
+            # résultat net via l'historique des deals MT5.
+            closed_tickets = self._known_tickets - current_tickets
+            for ticket in closed_tickets:
+                pos = self._tracked_positions.get(ticket)
+                if pos is None:
+                    continue
+                profit = self.mt5.get_deal_profit(ticket)
+                pos.profit = profit
+                result = "win" if profit >= 0 else "loss"
+                self._record_trade_result(pos, result, already_closed=True)
+
+        self._known_tickets = current_tickets
+        self._tracked_positions = {p.ticket: p for p in positions}
 
     def _close_and_record(self, pos: Position, result: str):
-        """Ferme une position et enregistre le résultat pour le risque, l'adaptation et l'anomalie."""
+        """Ferme une position (mode simulation) et enregistre le résultat."""
         self.mt5.close_position(pos.ticket)
+        self._record_trade_result(pos, result)
+
+    def _record_trade_result(self, pos: Position, result: str, already_closed: bool = False):
+        """Enregistre le résultat d'une position fermée pour le risque, l'adaptation et l'anomalie."""
         self.risk.record_trade_result(result, pos.volume)
         self.logger.trade(
             f"Position {pos.ticket} fermée — {result.upper()}, P&L: {pos.profit:.2f}",
@@ -315,7 +343,7 @@ class TradingBot:
                 regime=regime_name,
                 indicators=indicators,
                 entry_price=pos.entry_price,
-                exit_price=self.mt5.get_current_price(),
+                exit_price=pos.current_price if already_closed else self.mt5.get_current_price(),
             )
 
         # Alimente le détecteur d'anomalies

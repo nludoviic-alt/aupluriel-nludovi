@@ -10,6 +10,10 @@ lerna-debug.log*
 node_modules
 dist
 dist-ssr
+
+# Python
+__pycache__/
+*.pyc
 .output
 .vinxi
 .tanstack/**
@@ -19,6 +23,14 @@ dist-ssr
 # Wrangler / Cloudflare
 .wrangler/
 .dev.vars
+
+# Local secrets — MT5 credentials, never commit
+.env
+engine/.env
+
+# Claude Code local-machine settings
+.claude/settings.local.json
+.claude/scheduled_tasks.lock
 
 # Editor directories and files
 .vscode/*

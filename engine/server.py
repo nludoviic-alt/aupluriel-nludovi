@@ -6,8 +6,10 @@ Serveur FastAPI — pont entre le moteur Python et l'interface React.
 
 import asyncio
 import json
+import os
 import threading
 from typing import Optional
+from dotenv import load_dotenv
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -18,6 +20,22 @@ from .logger import TradeLogger
 from .backtest import Backtester
 from .mt5_connector import MT5Connector
 from .config import Timeframe
+
+load_dotenv()
+
+
+def _default_config() -> EngineConfig:
+    """Config par défaut — reprend les identifiants MT5 depuis .env si présent."""
+    config = EngineConfig()
+    if os.getenv("MT5_LOGIN"):
+        config.mt5_login = int(os.getenv("MT5_LOGIN"))
+    if os.getenv("MT5_PASSWORD"):
+        config.mt5_password = os.getenv("MT5_PASSWORD")
+    if os.getenv("MT5_SERVER"):
+        config.mt5_server = os.getenv("MT5_SERVER")
+    if os.getenv("MT5_PATH"):
+        config.mt5_path = os.getenv("MT5_PATH")
+    return config
 
 
 # --- Modèles ---
@@ -62,6 +80,7 @@ app = FastAPI(title="Au Pluriel Trading Engine", version="1.0.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:8081", "http://localhost:8080", "http://127.0.0.1:8081"],
+    allow_origin_regex=r"http://(localhost|127\.0\.0\.1|\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}):(8080|8081)",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -75,7 +94,7 @@ ws_clients: list = []
 def get_bot() -> TradingBot:
     global bot
     if bot is None:
-        config = EngineConfig()
+        config = _default_config()
         bot = TradingBot(config)
         bot.connect()
         bot._ws_broadcast = broadcast  # type: ignore

@@ -1,6 +1,6 @@
 """
 Configuration globale du moteur de trading.
-Instrument : Volatility 100 Index (Deriv MT5)
+Instrument : Boom 1000 Index (Deriv MT5)
 Capital démo : $1 000
 Risque max : 0.25% par trade
 """
@@ -39,9 +39,9 @@ class EngineConfig:
     mt5_bridge_key: str = ""
 
     # --- Instrument ---
-    symbol: str = "Volatility 100 Index"
-    symbol_mt5: str = "VOL100"
-    allowed_markets: list = field(default_factory=lambda: ["Volatility 100 Index"])
+    symbol: str = "Boom 1000 Index"
+    symbol_mt5: str = "BOOM1000"
+    allowed_markets: list = field(default_factory=lambda: ["Boom 1000 Index"])
 
     # --- Capital ---
     starting_capital: float = 1000.0

@@ -115,8 +115,16 @@ class RiskEngine:
         self.state.last_trade_result = result
         self.state.last_trade_volume = volume
 
-    def check(self, decision: Decision, atr: float, price: float) -> RiskCheck:
-        """Vérifie si un trade est autorisé selon toutes les règles de risque."""
+    def check(self, decision: Decision, atr: float, price: float,
+              stop_loss_price: Optional[float] = None) -> RiskCheck:
+        """Vérifie si un trade est autorisé selon toutes les règles de risque.
+
+        Si `stop_loss_price` est fourni (ex: stop propre à une stratégie de
+        l'ensemble), le volume est dimensionné sur la distance RÉELLE de ce
+        stop plutôt que sur la distance ATR par défaut — sinon le risque réel
+        peut diverger fortement du risque annoncé (ex: Momentum utilise un
+        stop à 2.25×ATR, Mean Reversion à 1.0×ATR, Breakout au support/résistance).
+        """
         reasons = []
 
         # 1. Kill-switch
@@ -141,25 +149,31 @@ class RiskEngine:
                 f"Max positions atteint ({self.state.open_count}/{self.config.max_concurrent_positions})"
             )
 
-        # 5. Anti-Martingale : interdiction de doubler la mise après une perte
+        # 5. Stop-loss / take-profit — utilise le stop réel fourni par l'appelant s'il existe,
+        #    sinon retombe sur le calcul par défaut basé sur l'ATR.
         risk_amount = self.config.risk_amount(self.state.balance)
-        volume = self._calculate_volume(risk_amount, atr, price)
+        if stop_loss_price is not None:
+            stop_loss = stop_loss_price
+            take_profit = 0.0  # non utilisé : l'appelant a déjà son propre take-profit
+            stop_distance = abs(price - stop_loss)
+            volume = self._calculate_volume_from_distance(risk_amount, stop_distance)
+        else:
+            if decision.direction.value == "BUY":
+                stop_loss = price - (self.config.atr_stop_multiplier * atr)
+                take_profit = price + (self.config.atr_stop_multiplier * atr * 2)  # RR 1:2
+            else:
+                stop_loss = price + (self.config.atr_stop_multiplier * atr)
+                take_profit = price - (self.config.atr_stop_multiplier * atr * 2)
+            volume = self._calculate_volume(risk_amount, atr, price)
 
+        # 6. Anti-Martingale : interdiction de doubler la mise après une perte
         if self.config.no_martingale and self.state.last_trade_result == "loss":
             if volume > self.state.last_trade_volume:
                 max_vol = self.state.last_trade_volume  # Ne pas augmenter
                 volume = min(volume, max_vol)
                 reasons.append("Anti-Martingale : volume limité au trade précédent")
 
-        # 6. Stop-loss obligatoire
-        if decision.direction.value == "BUY":
-            stop_loss = price - (self.config.atr_stop_multiplier * atr)
-            take_profit = price + (self.config.atr_stop_multiplier * atr * 2)  # RR 1:2
-        else:
-            stop_loss = price + (self.config.atr_stop_multiplier * atr)
-            take_profit = price - (self.config.atr_stop_multiplier * atr * 2)
-
-        # 7. Vérification que le risque correspond bien à 0.25%
+        # 7. Vérification que le risque correspond bien au budget configuré
         actual_risk = abs(price - stop_loss) * volume
         if actual_risk > risk_amount * 1.1:  # Tolérance 10%
             volume = risk_amount / abs(price - stop_loss) if abs(price - stop_loss) > 0 else 0
@@ -189,11 +203,16 @@ class RiskEngine:
         return check
 
     def _calculate_volume(self, risk_amount: float, atr: float, price: float) -> float:
-        """Calcule la taille de lot basée sur le risque et l'ATR."""
+        """Calcule la taille de lot basée sur le risque et l'ATR (stop par défaut)."""
         if atr <= 0 or price <= 0:
             return 0.0
         stop_distance = self.config.atr_stop_multiplier * atr
-        # volume = risque / distance_stop (simplifié, à ajuster selon specs MT5)
+        return self._calculate_volume_from_distance(risk_amount, stop_distance)
+
+    def _calculate_volume_from_distance(self, risk_amount: float, stop_distance: float) -> float:
+        """Calcule la taille de lot basée sur le risque et une distance de stop-loss explicite."""
+        if stop_distance <= 0:
+            return 0.0
         volume = risk_amount / stop_distance
         # Arrondi à 0.01 minimum
         return max(round(volume, 2), 0.01)
