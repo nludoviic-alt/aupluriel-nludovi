@@ -1,0 +1,30 @@
+version: '3.8'
+
+services:
+  engine:
+    build:
+      context: .
+      dockerfile: engine/Dockerfile
+    container_name: au_pluriel_engine
+    restart: always
+    ports:
+      - "8000:8000"
+    environment:
+      - PORT=8000
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID:-}
+    volumes:
+      - ./engine/logs:/app/engine/logs
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: au_pluriel_web
+    restart: always
+    ports:
+      - "8080:8080"
+    environment:
+      - NODE_ENV=production
+    depends_on:
+      - engine

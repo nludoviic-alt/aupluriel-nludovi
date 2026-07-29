@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0F172A" />
+      <stop offset="100%" stop-color="#020617" />
+    </linearGradient>
+    <linearGradient id="primary-glow" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#F97316" />
+      <stop offset="50%" stop-color="#F59E0B" />
+      <stop offset="100%" stop-color="#EAB308" />
+    </linearGradient>
+    <linearGradient id="cyan-glow" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38BDF8" />
+      <stop offset="100%" stop-color="#0284C7" />
+    </linearGradient>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="16" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </defs>
+  <rect width="512" height="512" rx="128" fill="url(#bg)" stroke="rgba(249, 115, 22, 0.3)" stroke-width="8" />
+  
+  <!-- Glowing Background Pulse -->
+  <circle cx="256" cy="256" r="180" fill="rgba(249, 115, 22, 0.12)" filter="url(#glow)" />
+  
+  <!-- Quant Waveform Graphic -->
+  <g filter="url(#glow)" transform="translate(48, 48)">
+    <path d="M 80 280 L 140 200 L 210 260 L 290 120 L 340 170 L 380 130" fill="none" stroke="url(#primary-glow)" stroke-width="28" stroke-linecap="round" stroke-linejoin="round" />
+    <path d="M 120 310 L 180 250 L 240 290 L 320 180" fill="none" stroke="url(#cyan-glow)" stroke-width="16" stroke-linecap="round" opacity="0.8" />
+    
+    <!-- Candlestick Pillars -->
+    <rect x="130" y="160" width="20" height="90" rx="6" fill="url(#primary-glow)" />
+    <line x1="140" y1="130" x2="140" y2="270" stroke="url(#primary-glow)" stroke-width="6" />
+    
+    <rect x="200" y="220" width="20" height="70" rx="6" fill="url(#cyan-glow)" />
+    <line x1="210" y1="190" x2="210" y2="310" stroke="url(#cyan-glow)" stroke-width="6" />
+
+    <rect x="280" y="100" width="22" height="110" rx="6" fill="url(#primary-glow)" />
+    <line x1="291" y1="70" x2="291" y2="230" stroke="url(#primary-glow)" stroke-width="6" />
+    
+    <!-- Pulse Sparkle Circle -->
+    <circle cx="380" cy="130" r="14" fill="#F59E0B" />
+  </g>
+</svg>
