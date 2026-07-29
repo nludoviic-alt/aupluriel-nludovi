@@ -53,14 +53,17 @@ class PositionManager:
         actions = {"modify_sl": None, "partial_close": None, "close_all": False}
         is_buy = pos.direction == "BUY"
 
-        # Mise à jour du meilleur prix atteint
+        # Calcul du meilleur prix atteint (Maximum Favorable Excursion)
         if is_buy:
             mfe = max(mgmt.max_favorable_excursion, current_price - pos.entry_price)
         else:
             mfe = max(mgmt.max_favorable_excursion, pos.entry_price - current_price)
         mgmt.max_favorable_excursion = mfe
 
-        # ─── 1. Break-even automatique ───
+        # ─── 0. Micro-scalping dynamique & Verrouillage de gain ───
+        micro_target = getattr(self.config, 'micro_tp_dollars', 0.50)
+        
+        # 1. Break-even automatique ultra-rapide (Risque 0$ dès +0.2 pts)
         break_even_pips = self.config.break_even_pips
         if not mgmt.break_even_triggered and mfe >= break_even_pips:
             new_sl = pos.entry_price
@@ -68,6 +71,21 @@ class PositionManager:
                 mgmt.current_sl = new_sl
                 mgmt.break_even_triggered = True
                 actions["modify_sl"] = new_sl
+
+        # 2. Sécurisation du gain minimal à +$0.50 + Trailing pour laisser courir les gros spikes
+        if pos.profit >= micro_target:
+            mgmt.trailing_active = True
+            trail_distance = max(0.2, atr * self.config.trailing_atr_multiplier)
+            if is_buy:
+                new_sl = current_price - trail_distance
+                if new_sl > mgmt.current_sl:
+                    mgmt.current_sl = new_sl
+                    actions["modify_sl"] = new_sl
+            else:
+                new_sl = current_price + trail_distance
+                if new_sl < mgmt.current_sl:
+                    mgmt.current_sl = new_sl
+                    actions["modify_sl"] = new_sl
 
         # ─── 2. Trailing stop dynamique (ATR) ───
         if mgmt.break_even_triggered or mfe >= atr * 1.5:

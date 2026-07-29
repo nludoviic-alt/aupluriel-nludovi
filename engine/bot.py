@@ -171,7 +171,9 @@ class TradingBot:
         # 8. Met à jour l'état du risque
         account = self.mt5.get_account_info()
         positions = self.mt5.get_positions()
-        daily_pnl = sum(p.profit for p in positions)
+        floating_pnl = sum(p.profit for p in positions)
+        realized_pnl = getattr(self.mt5, '_sim_realized_pnl', 0.0) if self.mt5._sim_mode else 0.0
+        daily_pnl = floating_pnl + realized_pnl
         self.risk.update_state(
             balance=account.get("balance", self.config.starting_capital),
             equity=account.get("equity", self.config.starting_capital),
@@ -246,9 +248,12 @@ class TradingBot:
             atr = m15_ind.atr if m15_ind else current_price * 0.01
             for pos in positions:
                 actions = self.position_manager.update(pos, current_price, atr)
-                if actions["modify_sl"] is not None:
+                if actions.get("close_all"):
+                    self.logger.trade(f"Fermeture micro-scalp — gain sécurisé: +${pos.profit:.2f} sur ticket #{pos.ticket}")
+                    self.mt5.close_position(pos.ticket)
+                elif actions["modify_sl"] is not None:
                     self.logger.info(f"Position {pos.ticket}: SL ajusté à {actions['modify_sl']:.4f}")
-                if actions["partial_close"]:
+                if actions.get("partial_close"):
                     pc = actions["partial_close"]
                     self.logger.info(f"Position {pos.ticket}: fermeture partielle niveau {pc['level']} — {pc['volume']} lots à {pc['price']:.4f}")
 

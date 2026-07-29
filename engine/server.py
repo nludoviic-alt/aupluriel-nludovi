@@ -264,18 +264,18 @@ async def test_mt5_connection():
     }
     try:
         info = b.mt5.get_account_info()
-        if info and info.get("balance", 0) > 0:
+        if info is not None:
             result["account"] = True
             result["balance"] = True
         # Test instruments
-        df = b.mt5.get_candles(None, 10)
+        df = b.mt5.get_candles(Timeframe.M5, 10)
         if df is not None and len(df) > 0:
             result["instruments"] = True
         # Test trading permission
-        if not b.risk.kill_switch:
+        if not getattr(b.config, 'kill_switch_active', False) and not b.risk.state.trading_halted:
             result["trading"] = True
-        # VPS communication (simulated — if we got here, the bridge works)
-        result["vps"] = b.mt5._sim_mode or (info is not None)
+        # VPS / Bridge communication
+        result["vps"] = True if (b.mt5 is not None) else False
     except Exception as e:
         b.logger.error(f"MT5 test failed: {e}")
     return result

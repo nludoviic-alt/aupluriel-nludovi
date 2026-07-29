@@ -50,6 +50,7 @@ class MT5Connector:
         self._sim_prices = {}
         self._sim_positions = []
         self._sim_ticket = 100000
+        self._sim_realized_pnl = 0.0  # P&L cumulé des trades fermés en simulation
 
     def connect(self) -> bool:
         """Tente de se connecter à MT5. Bascule en simulation si indisponible."""
@@ -189,7 +190,7 @@ class MT5Connector:
     def get_account_info(self) -> dict:
         """Récupère les infos du compte (balance, equity, marge)."""
         if self._sim_mode:
-            balance = self.config.starting_capital
+            balance = self.config.starting_capital + self._sim_realized_pnl
             # Simule l'équité avec les positions virtuelles
             equity = balance + sum(p.profit for p in self._sim_positions)
             return {
@@ -440,12 +441,18 @@ class MT5Connector:
     def close_position(self, ticket: int) -> bool:
         """Ferme une position par son ticket."""
         if self._sim_mode:
-            before = len(self._sim_positions)
-            self._sim_positions = [p for p in self._sim_positions if p.ticket != ticket]
-            closed = len(self._sim_positions) < before
-            if closed:
+            closed_pos = None
+            new_positions = []
+            for p in self._sim_positions:
+                if p.ticket == ticket:
+                    closed_pos = p
+                else:
+                    new_positions.append(p)
+            self._sim_positions = new_positions
+            if closed_pos is not None:
+                self._sim_realized_pnl += closed_pos.profit
                 self.logger.trade(f"[SIM] Position {ticket} fermée")
-            return closed
+            return closed_pos is not None
 
         positions = self.mt5.positions_get(ticket=ticket)
         if not positions:
@@ -480,6 +487,7 @@ class MT5Connector:
         """Ferme toutes les positions — utilisé par le kill-switch."""
         if self._sim_mode:
             count = len(self._sim_positions)
+            self._sim_realized_pnl += sum(p.profit for p in self._sim_positions)
             self._sim_positions.clear()
             self.logger.trade(f"[SIM] {count} positions fermées (close all)")
             return count

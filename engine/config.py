@@ -111,15 +111,17 @@ class EngineConfig:
         "trend_following", "mean_reversion", "breakout", "momentum"
     ])
 
-    # ─── Trailing stop et gestion avancée ───
+    # ─── Trailing stop, Micro-scalping et gestion avancée ───
     enable_trailing_stop: bool = True
-    trailing_atr_multiplier: float = 2.0
-    break_even_pips: float = 0.5  # En pips (ou points selon l'instrument)
+    trailing_atr_multiplier: float = 0.8
+    break_even_pips: float = 0.2  # Déclenchement rapide du break-even
+    enable_micro_scalp: bool = True
+    micro_tp_dollars: float = 0.50  # Fermeture automatique dès +$0.50 ou +$1.00 de gain
     enable_partial_close: bool = True
-    tp1_threshold: float = 1.0  # ATR multiples pour TP1
-    tp1_close_pct: float = 0.5  # Fermer 50% à TP1
-    tp2_threshold: float = 2.0  # ATR multiples pour TP2
-    tp2_close_pct: float = 0.3  # Fermer 30% à TP2
+    tp1_threshold: float = 0.5  # ATR multiples pour TP1 (gains rapides)
+    tp1_close_pct: float = 0.7  # Fermer 70% très rapidement
+    tp2_threshold: float = 1.0  # ATR multiples pour TP2
+    tp2_close_pct: float = 0.3  # Fermer le reste
 
     # ─── Apprentissage adaptatif ───
     enable_adaptive: bool = True

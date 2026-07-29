@@ -107,13 +107,15 @@ class AdaptiveLearner:
     def analyze(self) -> AdaptiveInsights:
         """Analyse l'historique et produit des insights."""
         if len(self._trades) < 5:
+            wins = [t for t in self._trades if t.result == "win"]
             return AdaptiveInsights(
                 best_hours=[], worst_hours=[],
                 best_strategy="", worst_strategy="",
                 best_regime="", optimal_confidence=self.config.min_confidence_threshold,
                 optimal_volume_pct=self.config.risk_per_trade_pct,
                 win_rate_by_strategy={}, win_rate_by_hour={}, win_rate_by_regime={},
-                total_trades=0, total_wins=0, total_pnl=0,
+                total_trades=len(self._trades), total_wins=len(wins),
+                total_pnl=round(sum(t.pnl for t in self._trades), 2),
                 recommendations=["Pas assez de trades pour l'analyse (minimum 5)"],
             )
 

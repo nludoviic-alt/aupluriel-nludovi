@@ -82,7 +82,7 @@
   --warning: oklch(0.78 0.16 80);
   --info: oklch(0.72 0.15 220);
 
-  --border: oklch(0.28 0.02 260 / 60%);
+  --border: oklch(0.35 0.03 260);
   --input: oklch(0.28 0.02 260 / 70%);
   --ring: oklch(0.72 0.18 55);
 
