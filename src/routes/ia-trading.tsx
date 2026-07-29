@@ -9,6 +9,7 @@ import {
   CheckCircle2, XCircle, Lock, Unlock, Wifi, WifiOff, Eye, SlidersHorizontal
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
 import { useEngine } from "@/hooks/use-engine";
 import { useRollingSeries } from "@/hooks/use-rolling-series";
@@ -216,6 +217,26 @@ function AutoTraderPage() {
     return { count, win: first === "win" };
   }, [trades]);
 
+  const isBoomActive = useMemo(() => {
+    const sym = (config?.symbol ?? "Boom 1000 Index").toLowerCase();
+    const strats = (config as any)?.active_strategies ?? [];
+    return sym.includes("boom") || strats.includes("boom_1000");
+  }, [config]);
+
+  const switchPreset = async (activateBoom: boolean) => {
+    const newSym = activateBoom ? "Boom 1000 Index" : "Default";
+    const newSymMt5 = activateBoom ? "BOOM1000" : "DEFAULT";
+    const activeStrats = activateBoom ? ["boom_1000", "spike_detection"] : ["trend_following", "default"];
+    const res = await apiCall("config", "POST", {
+      symbol: newSym,
+      symbol_mt5: newSymMt5,
+      active_strategies: activeStrats,
+    });
+    if (res) {
+      toast.success(activateBoom ? "Preset ACTIVÉ : 🔥 BOOM 1000" : "Preset ACTIVÉ : 🛡️ DEFAULT");
+    }
+  };
+
   const toggleEngine = async () => {
     if (isRunning) {
       await apiCall("stop");
@@ -361,6 +382,91 @@ function AutoTraderPage() {
           <Button variant="outline" size="sm" className="rounded-xl gap-1.5 text-xs font-bold border-slate-700/70">
             <Eye className="h-4 w-4 text-cyan-400" /> APERÇU LIVE
           </Button>
+        </div>
+      </div>
+
+      {/* ── DEDICATED SWITCH BOOM vs DEFAULT (ALWAYS ACCESSIBLE) ── */}
+      <div className="rounded-2xl border-2 border-amber-500/40 bg-gradient-to-r from-amber-950/40 via-slate-900/95 to-cyan-950/40 p-4 space-y-3 shadow-xl w-full">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="h-10 w-10 rounded-xl bg-amber-500/15 border border-amber-500/40 flex items-center justify-center shrink-0">
+              <Zap className="h-5 w-5 text-amber-400" />
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <h3 className="text-xs sm:text-sm font-black uppercase tracking-wider text-foreground">Switch Stratégie & Preset</h3>
+                <span className={cn(
+                  "px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider border",
+                  isBoomActive ? "bg-amber-500/20 text-amber-400 border-amber-500/40" : "bg-cyan-500/20 text-cyan-400 border-cyan-500/40"
+                )}>
+                  {isBoomActive ? "🔥 BOOM 1000 ACTIVÉ" : "🛡️ DEFAULT ACTIVÉ"}
+                </span>
+              </div>
+              <p className="text-[11px] text-muted-foreground mt-0.5">
+                Basculez instantanément entre le preset <span className="text-amber-400 font-bold">Boom 1000</span> et le preset <span className="text-cyan-400 font-bold">Default</span>.
+              </p>
+            </div>
+          </div>
+
+          {/* Interactive Switch Control */}
+          <div className="flex items-center gap-2.5 bg-background/80 border border-slate-700/80 rounded-xl p-1.5 shrink-0 shadow-inner">
+            <button
+              type="button"
+              onClick={() => switchPreset(false)}
+              className={cn(
+                "text-xs font-black uppercase px-3 py-1.5 rounded-lg transition-all flex items-center gap-1",
+                !isBoomActive ? "bg-cyan-500/20 text-cyan-400 border border-cyan-500/40 shadow-sm" : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              🛡️ DEFAULT
+            </button>
+
+            <Switch
+              checked={isBoomActive}
+              onCheckedChange={(checked) => switchPreset(checked)}
+              className="shrink-0 data-[state=checked]:bg-amber-500 data-[state=unchecked]:bg-cyan-500 h-6 w-11"
+            />
+
+            <button
+              type="button"
+              onClick={() => switchPreset(true)}
+              className={cn(
+                "text-xs font-black uppercase px-3 py-1.5 rounded-lg transition-all flex items-center gap-1",
+                isBoomActive ? "bg-amber-500/20 text-amber-400 border border-amber-500/40 shadow-sm" : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              🔥 BOOM 1000
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* ── MOBILE PERMANENT ENGINE POWER BAR ── */}
+      <div className="rounded-2xl border-2 border-emerald-500/30 bg-card/95 p-4 space-y-3 shadow-lg w-full md:hidden">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className={cn("h-3 w-3 rounded-full shrink-0", isRunning ? "bg-emerald-400 animate-pulse" : "bg-muted-foreground")} />
+            <div className="min-w-0">
+              <div className="text-xs font-bold text-foreground truncate flex items-center gap-1.5">
+                Auto-Trader Moteur
+                <span className={cn("text-[9px] px-1.5 py-0.5 rounded font-black uppercase tracking-wider", isRunning ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/40" : "bg-muted/30 text-muted-foreground border border-slate-700/60")}>
+                  {isRunning ? "ACTIVÉ" : "DÉSACTIVÉ"}
+                </span>
+              </div>
+              <p className="text-[10px] text-muted-foreground truncate">
+                {config?.symbol ?? "Boom 1000 Index"} · {isLive ? "⚡ Live" : "🧪 Simulation"}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Moteur</span>
+            <Switch
+              checked={isRunning}
+              disabled={killSwitch}
+              onCheckedChange={toggleEngine}
+              className="shrink-0 data-[state=checked]:bg-emerald-500"
+            />
+          </div>
         </div>
       </div>
 

@@ -35,7 +35,6 @@ import { cn } from "@/lib/utils";
 const tradingItems = [
   { title: "Dashboard",        url: "/",                icon: LayoutDashboard, color: "text-violet-400",  glow: "shadow-violet-500/30" },
   { title: "Auto-Trader",     url: "/ia-trading",      icon: Zap,              color: "text-amber-400",  glow: "shadow-amber-500/30" },
-  { title: "Compte Deriv",     url: "/compte-deriv",    icon: CreditCard,       color: "text-blue-400",   glow: "shadow-blue-500/30" },
   { title: "Positions",        url: "/positions",       icon: BriefcaseBusiness, color: "text-cyan-400",  glow: "shadow-cyan-500/30" },
 ];
 

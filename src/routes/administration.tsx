@@ -814,6 +814,16 @@ function AdminPage() {
                         <BrokerDot label="O" active={u.has_oanda === 1} color="emerald" />
                       </div>
                     </div>
+                    {!isAdmin && (
+                      <div className="flex justify-between items-center pt-1" onClick={(e) => e.stopPropagation()}>
+                        <span className="text-muted-foreground font-semibold">Auto-Trader</span>
+                        <BotStatusCell
+                          status={botStatus[u.id]}
+                          busy={botBusyId === u.id}
+                          onToggle={(action) => toggleBot(u.id, action)}
+                        />
+                      </div>
+                    )}
                   </div>
                   <button
                     onClick={(e) => { e.stopPropagation(); openProfile(u); }}

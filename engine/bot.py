@@ -523,6 +523,7 @@ class TradingBot:
                 "min_rr_ratio": self.config.min_rr_ratio,
                 "max_total_exposure_pct": self.config.max_total_exposure_pct,
                 "min_balance": self.config.min_balance,
+                "active_strategies": self.config.active_strategies,
             },
         }
 
@@ -556,4 +557,8 @@ class TradingBot:
             self.config.allow_buy = bool(updates["allow_buy"])
         if "allow_sell" in updates:
             self.config.allow_sell = bool(updates["allow_sell"])
+        if "active_strategies" in updates:
+            self.config.active_strategies = updates["active_strategies"]
+        if "strategies" in updates:
+            self.config.active_strategies = updates["strategies"]
         self.logger.info(f"Configuration mise à jour: {updates}")

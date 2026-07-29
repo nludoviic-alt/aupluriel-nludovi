@@ -73,12 +73,29 @@ function StrategiesPage() {
 
   const activeCount = items.filter((s) => s.enabled).length;
 
-  function persist(next: Strategy[]) {
+  async function persist(next: Strategy[]) {
     setItems(next);
     try {
       window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
     } catch {
       /* ignore */
+    }
+    const activePresets = next.filter((s) => s.enabled).map((s) => ({
+      id: s.id,
+      name: s.name,
+      pair: s.pair,
+      indicator: s.indicator,
+      buyThreshold: s.buyThreshold,
+      sellThreshold: s.sellThreshold,
+      stopLoss: s.stopLoss,
+      takeProfit: s.takeProfit,
+    }));
+    const res = await apiCall("config", "POST", {
+      active_strategies: activePresets,
+      strategies: activePresets,
+    });
+    if (res) {
+      toast.success("Preset synchronisé avec le bot serveur");
     }
   }
 
@@ -115,7 +132,7 @@ function StrategiesPage() {
 
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between relative z-10">
           <div className="flex items-center gap-4 flex-1">
-            <div className="h-12 w-12 rounded-xl bg-primary/15 border border-primary/30 flex items-center justify-center">
+            <div className="h-12 w-12 rounded-xl bg-primary/15 border border-primary/30 flex items-center justify-center shrink-0">
               <Workflow className="h-6 w-6 text-primary" />
             </div>
             <div>
@@ -159,14 +176,16 @@ function StrategiesPage() {
       <div className="grid gap-4 md:grid-cols-2">
         {items.map((s) => (
           <div key={s.id} className="rounded-2xl border border-border/50 bg-card/60 p-4">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <h3 className="text-base font-semibold">{s.name}</h3>
-                <p className="text-xs text-muted-foreground">
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0 flex-1">
+                <h3 className="text-base font-semibold truncate">{s.name}</h3>
+                <p className="text-xs text-muted-foreground truncate">
                   {s.pair} · {s.indicator} · SL {s.stopLoss}% / TP {s.takeProfit}%
                 </p>
               </div>
-              <Switch checked={s.enabled} onCheckedChange={() => toggle(s.id)} />
+              <div className="flex items-center gap-2 shrink-0">
+                <Switch checked={s.enabled} onCheckedChange={() => toggle(s.id)} className="shrink-0" />
+              </div>
             </div>
             <div className="mt-3 flex flex-wrap gap-2 text-xs">
               <span className="rounded-md bg-muted/40 px-2 py-0.5">

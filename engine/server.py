@@ -55,6 +55,8 @@ class ConfigUpdate(BaseModel):
     min_balance: Optional[float] = None
     allow_buy: Optional[bool] = None
     allow_sell: Optional[bool] = None
+    active_strategies: Optional[list] = None
+    strategies: Optional[list] = None
 
 
 class ForceTradeRequest(BaseModel):

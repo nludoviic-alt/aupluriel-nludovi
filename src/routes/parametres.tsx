@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { Bell, CheckCircle2, CreditCard, Eye, EyeOff, FlaskConical, KeyRound, Loader2, LogOut, ShieldAlert, UserCircle, Wifi, WifiOff } from "lucide-react";
+import { Bell, CheckCircle2, CreditCard, Eye, EyeOff, FlaskConical, KeyRound, Loader2, LogOut, Shield, ShieldAlert, TestTube, UserCircle, Wifi, WifiOff, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
@@ -14,6 +14,7 @@ import { getExistingPushSubscription, isIosNonSafari, isIosNonStandalone, isPush
 import { ConfirmDialog, useConfirm } from "@/components/confirm-dialog";
 import { AvatarPicker } from "@/components/avatar-picker";
 import { useAuth } from "@/hooks/use-auth";
+import { useEngine, ENGINE_API_BASE } from "@/hooks/use-engine";
 
 export const Route = createFileRoute("/parametres")({
   head: () => ({ meta: [{ title: "Paramètres — Au Pluriel" }] }),
@@ -50,8 +51,11 @@ function SettingsPage() {
   const [pushChecked, setPushChecked] = useState(false);
   // Broker enable/disable toggles
   const [enableDeriv, setEnableDeriv] = useState(true);
-  const [mt5Form, setMt5Form] = useState({ account_type: "demo", login: "6222926", password: "", server: "Deriv-Demo" });
+  const [mt5Form, setMt5Form] = useState({ account_type: "demo", login: "6222926", password: "", server: "Deriv-Demo", path: "C:\\Program Files\\MetaTrader 5\\terminal64.exe" });
   const [mt5Show, setMt5Show] = useState(false);
+  const [mt5TestResult, setMt5TestResult] = useState<{ account: boolean; balance: boolean; instruments: boolean; trading: boolean; vps: boolean } | null>(null);
+  const [mt5Testing, setMt5Testing] = useState(false);
+  const { status: engineStatus, connected: engineConnected, apiCall: engineApiCall, loading: engineLoading } = useEngine();
   const { confirmState, confirm } = useConfirm();
 
   useEffect(() => {
@@ -72,6 +76,7 @@ function SettingsPage() {
           login: saved.login ?? "6222926",
           password: saved.password ?? "",
           server: saved.server ?? "Deriv-Demo",
+          path: saved.path ?? "C:\\Program Files\\MetaTrader 5\\terminal64.exe",
         });
       }
     } catch { /* ignore */ }
@@ -174,6 +179,47 @@ function SettingsPage() {
     }
   }
 
+  async function handleMt5Connect() {
+    if (!mt5Form.password) {
+      toast.error("Entrez votre mot de passe MT5 avant de vous connecter.");
+      return;
+    }
+    const result = await engineApiCall("mt5/connect", "POST", {
+      login: parseInt(mt5Form.login) || 0,
+      password: mt5Form.password,
+      server: mt5Form.server.trim(),
+      path: mt5Form.path.trim().replace(/^["']|["']$/g, ""),
+    });
+    if (!result) {
+      toast.error("Échec de la requête — le moteur (backend) est-il démarré ?");
+      return;
+    }
+    if (result.sim_mode) {
+      toast.error("Connexion MT5 refusée — repassé en mode simulation. Vérifiez le login, le mot de passe et le serveur.");
+    } else {
+      toast.success(`Connecté à MT5 — compte ${result.account?.login}, solde ${result.account?.balance} ${result.account?.currency}`);
+    }
+  }
+
+  async function handleMt5Test() {
+    setMt5Testing(true);
+    setMt5TestResult(null);
+    try {
+      const res = await fetch(`${ENGINE_API_BASE}/mt5/test`);
+      if (res.ok) {
+        setMt5TestResult(await res.json());
+      } else {
+        toast.error("Le diagnostic a échoué — le moteur a répondu une erreur.");
+        setMt5TestResult({ account: false, balance: false, instruments: false, trading: false, vps: false });
+      }
+    } catch {
+      toast.error("Le diagnostic a échoué — moteur injoignable.");
+      setMt5TestResult({ account: false, balance: false, instruments: false, trading: false, vps: false });
+    } finally {
+      setMt5Testing(false);
+    }
+  }
+
   async function saveLocal() {
     localStorage.setItem(KEYS.token, token);
     localStorage.setItem(KEYS.account, account);
@@ -225,7 +271,7 @@ function SettingsPage() {
           <h1 className="text-xl md:text-2xl font-black tracking-tight bg-gradient-to-r from-white via-white to-white/75 bg-clip-text text-transparent">
             Paramètres
           </h1>
-          <p className="text-xs md:text-sm text-muted-foreground mt-1">Brokers et risque.</p>
+          <p className="text-xs md:text-sm text-muted-foreground mt-1">Connexion Deriv MT5, backtest et notifications.</p>
         </div>
         <Button
           variant="outline"
@@ -237,188 +283,58 @@ function SettingsPage() {
         </Button>
       </div>
 
-      {/* Main Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-
-        {/* LEFT COLUMN: Deriv + Auto-Backtest */}
-        <div className="space-y-6">
-          <CollapsibleSection
-            icon={<KeyRound className="mt-1 h-5.5 w-5.5 shrink-0 text-red-400" />}
-            title="Connexion Deriv MT5"
-            help="Forex, or, multiplicateurs. Créez une clé sur app.deriv.com → API token. Stockée localement dans ce navigateur."
-            defaultOpen
-            accentClassName="border-red-500/40 bg-red-500/[0.08]"
-          >
-            <div className="space-y-4">
-              <div className="flex items-center justify-between rounded-xl border border-white/5 bg-white/[0.02] px-3 py-2.5">
-                <span className="text-[11px] md:text-xs font-bold uppercase tracking-wider text-neutral-300">Broker actif</span>
-                <Switch checked={enableDeriv} onCheckedChange={(v) => toggleBroker("enableDeriv", v)} />
-              </div>
-              <div className="space-y-2">
-                <span className="text-[11px] md:text-xs font-bold uppercase tracking-wider text-neutral-300">Token API Deriv</span>
-                <div className="relative">
-                  <input
-                    type={show ? "text" : "password"}
-                    value={token}
-                    onChange={(e) => setToken(e.target.value)}
-                    placeholder="ex: a1b2c3d4..."
-                    className="w-full rounded-xl border border-border bg-background px-3 py-2.5 pr-10 text-xs md:text-sm font-mono text-foreground focus:ring-1 focus:ring-cyan-500/50 outline-none"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShow((s) => !s)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                  >
-                    {show ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                  </button>
-                </div>
-              </div>
-
+      {/* MT5 Account — pleine largeur */}
+      <CollapsibleSection
+        icon={<CreditCard className="mt-1 h-5.5 w-5.5 text-emerald-400 shrink-0" />}
+        title="Compte Deriv MT5"
+        help="Identifiants de connexion au terminal MetaTrader 5 Deriv. Sauvegardés localement et dans le backend (.env)."
+        defaultOpen
+      >
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Colonne gauche : Identifiants */}
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-3">
               <div className="space-y-2">
                 <span className="text-[11px] md:text-xs font-bold uppercase tracking-wider text-neutral-300">Type de Compte</span>
-                <div className="flex bg-neutral-950/80 p-1.5 rounded-xl border border-white/5 gap-1.5 max-w-[200px]">
-                  {(["demo", "live"] as const).map((t) => (
+                <div className="flex bg-neutral-950/80 p-1.5 rounded-xl border border-white/5 gap-1.5">
+                  {(["demo", "real"] as const).map((t) => (
                     <button
                       key={t}
-                      onClick={async () => {
-                        if (t === "live") {
-                          const ok = await confirm({
-                            title: "Passer en mode LIVE ?",
-                            description: "Le mode LIVE engage de l'argent réel sur les transactions Deriv. Es-tu sûr de vouloir passer en mode LIVE ?",
-                            confirmLabel: "Passer en LIVE",
-                            danger: true,
-                      });
-                      if (!ok) return;
-                    }
-                    setAccount(t);
-                  }}
+                      onClick={() => setMt5Form({ ...mt5Form, account_type: t, server: t === "demo" ? "Deriv-Demo" : "Deriv-Server" })}
                       className={cn(
-                        "flex-1 py-1.5 text-[10px] md:text-xs uppercase tracking-wider font-bold rounded-lg transition-all text-center",
-                        account === t
+                        "flex-1 py-1.5 text-[10px] uppercase tracking-wider font-bold rounded-lg transition-all text-center",
+                        mt5Form.account_type === t
                           ? t === "demo"
                             ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/20"
-                            : "bg-red-500/15 text-red-400 border border-red-500/20 animate-pulse"
+                            : "bg-red-500/15 text-red-400 border border-red-500/20"
                           : "text-muted-foreground hover:text-foreground border border-transparent"
                       )}
                     >
-                      {t}
+                      {t === "demo" ? "Démo" : "Réel"}
                     </button>
                   ))}
                 </div>
-                {account === "live" && (
-                  <span className="text-xs text-[color:var(--bear)] flex items-center gap-1.5 font-medium">
-                    <ShieldAlert className="h-4 w-4 shrink-0" /> Argent réel — sois prudent.
-                  </span>
-                )}
               </div>
-
-              <div className="pt-2">
-                <Button
-                  onClick={testConnection}
-                  disabled={loading}
-                  className="w-full bg-gradient-to-r from-cyan-500/20 to-violet-500/20 hover:from-cyan-500/35 hover:to-violet-500/35 text-cyan-400 border border-cyan-500/30 font-bold h-10 text-xs md:text-sm rounded-xl shadow-sm transition-all"
-                >
-                  {loading ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <CheckCircle2 className="mr-1.5 h-4 w-4" />}
-                  Tester & enregistrer Deriv
-                </Button>
+              <div className="space-y-2">
+                <span className="text-[11px] md:text-xs font-bold uppercase tracking-wider text-neutral-300">Serveur</span>
+                <input
+                  type="text"
+                  list="deriv-servers-settings"
+                  value={mt5Form.server}
+                  onChange={(e) => setMt5Form({ ...mt5Form, server: e.target.value })}
+                  className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-xs md:text-sm font-mono text-foreground focus:ring-1 focus:ring-emerald-500/50 outline-none"
+                />
+                <datalist id="deriv-servers-settings">
+                  <option value="Deriv-Demo" />
+                  <option value="Deriv-Server" />
+                  <option value="Deriv-Server-02" />
+                  <option value="DerivSVG-Server" />
+                  <option value="DerivBVI-Server" />
+                </datalist>
               </div>
-
-              {info && (
-                <div className="rounded-xl border border-emerald-500/25 bg-emerald-500/5 p-3.5 text-xs">
-                  <div className="font-bold text-emerald-400 flex items-center gap-1.5">
-                    <span className="relative flex h-2 w-2">
-                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-                      <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
-                    </span>
-                    Connexion active
-                  </div>
-                  <div className="text-muted-foreground mt-1.5 space-y-1 font-mono text-[11px] md:text-xs">
-                    <div>Compte ID : <span className="text-neutral-200 font-bold">{info.id}</span></div>
-                    {info.balance !== undefined && (
-                      <div>Solde : <span className="text-neutral-200 font-bold">{info.balance.toFixed(2)} {info.currency}</span></div>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-          </CollapsibleSection>
-
-          {/* Auto-Backtest Card */}
-          <CollapsibleSection
-            icon={<FlaskConical className="mt-1 h-5.5 w-5.5 text-cyan-400 shrink-0" />}
-            title="Backtest automatique"
-            help="Rejoue le pipeline live toutes les 6h. Si le win rate dépasse le seuil de rentabilité, le bot démarre en Démo ; sinon il s'arrête. En Live : arrêt automatique seulement, jamais de démarrage auto."
-          >
-            <div
-              className={cn(
-                "flex items-center justify-between p-3.5 rounded-xl border transition-all",
-                autoBacktestEnabled ? "bg-cyan-500/5 border-cyan-500/20" : "bg-white/[0.005] border-white/5"
-              )}
-            >
-              <div>
-                <h4 className="text-xs md:text-sm text-neutral-200 font-bold">Activer l'automatisme</h4>
-                <p className="text-[11px] md:text-xs text-muted-foreground mt-0.5">
-                  Démo : auto. Live : arrêt seulement.
-                </p>
-              </div>
-              <Switch checked={autoBacktestEnabled} disabled={autoBacktestSaving} onCheckedChange={toggleAutoBacktest} />
             </div>
 
-            {autoBacktestEnabled && <AutoBacktestStatus />}
-          </CollapsibleSection>
-        </div>
-
-        {/* RIGHT COLUMN: MT5 Account + Risk + Push */}
-        <div className="space-y-6">
-          {/* MT5 Account Card */}
-          <CollapsibleSection
-            icon={<CreditCard className="mt-1 h-5.5 w-5.5 text-emerald-400 shrink-0" />}
-            title="Compte Deriv MT5"
-            help="Identifiants de connexion au terminal MetaTrader 5 Deriv. Sauvegardés localement et dans le backend (.env)."
-            defaultOpen
-          >
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-2">
-                  <span className="text-[11px] md:text-xs font-bold uppercase tracking-wider text-neutral-300">Type de Compte</span>
-                  <div className="flex bg-neutral-950/80 p-1.5 rounded-xl border border-white/5 gap-1.5">
-                    {(["demo", "real"] as const).map((t) => (
-                      <button
-                        key={t}
-                        onClick={() => setMt5Form({ ...mt5Form, account_type: t, server: t === "demo" ? "Deriv-Demo" : "Deriv-Server" })}
-                        className={cn(
-                          "flex-1 py-1.5 text-[10px] uppercase tracking-wider font-bold rounded-lg transition-all text-center",
-                          mt5Form.account_type === t
-                            ? t === "demo"
-                              ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/20"
-                              : "bg-red-500/15 text-red-400 border border-red-500/20"
-                            : "text-muted-foreground hover:text-foreground border border-transparent"
-                        )}
-                      >
-                        {t === "demo" ? "Démo" : "Réel"}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <span className="text-[11px] md:text-xs font-bold uppercase tracking-wider text-neutral-300">Serveur</span>
-                  <input
-                    type="text"
-                    list="deriv-servers-settings"
-                    value={mt5Form.server}
-                    onChange={(e) => setMt5Form({ ...mt5Form, server: e.target.value })}
-                    className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-xs md:text-sm font-mono text-foreground focus:ring-1 focus:ring-emerald-500/50 outline-none"
-                  />
-                  <datalist id="deriv-servers-settings">
-                    <option value="Deriv-Demo" />
-                    <option value="Deriv-Server" />
-                    <option value="Deriv-Server-02" />
-                    <option value="DerivSVG-Server" />
-                    <option value="DerivBVI-Server" />
-                  </datalist>
-                </div>
-              </div>
-
+            <div className="grid grid-cols-2 gap-3">
               <div className="space-y-2">
                 <span className="text-[11px] md:text-xs font-bold uppercase tracking-wider text-neutral-300">ID Compte MT5 (Login)</span>
                 <input
@@ -428,7 +344,6 @@ function SettingsPage() {
                   className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-xs md:text-sm font-mono font-bold text-foreground focus:ring-1 focus:ring-emerald-500/50 outline-none"
                 />
               </div>
-
               <div className="space-y-2">
                 <span className="text-[11px] md:text-xs font-bold uppercase tracking-wider text-neutral-300">Mot de Passe MT5</span>
                 <div className="relative">
@@ -447,128 +362,123 @@ function SettingsPage() {
                     {mt5Show ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                   </button>
                 </div>
-                <p className="text-[10px] text-muted-foreground">
-                  Sauvegardé localement et dans le backend (.env). Cliquez "Enregistrer" pour appliquer.
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <span className="text-[11px] md:text-xs font-bold uppercase tracking-wider text-neutral-300">Chemin Terminal MT5 (optionnel)</span>
+              <input
+                type="text"
+                value={mt5Form.path}
+                onChange={(e) => setMt5Form({ ...mt5Form, path: e.target.value })}
+                placeholder="C:\Program Files\MetaTrader 5\terminal64.exe"
+                className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-xs md:text-sm font-mono text-foreground focus:ring-1 focus:ring-emerald-500/50 outline-none"
+              />
+              <p className="text-[10px] text-muted-foreground">
+                Sauvegardé localement et dans le backend (.env). Cliquez "Enregistrer" pour appliquer.
+              </p>
+            </div>
+
+            {/* Statut + bouton connexion */}
+            <div className={cn(
+              "flex items-center gap-2 rounded-xl border px-3 py-2.5 text-xs font-bold uppercase tracking-wider",
+              engineConnected && engineStatus && !engineStatus.sim_mode
+                ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400"
+                : engineConnected
+                  ? "border-amber-500/30 bg-amber-500/10 text-amber-400"
+                  : "border-red-500/30 bg-red-500/10 text-red-400"
+            )}>
+              {engineConnected && engineStatus && !engineStatus.sim_mode ? <Wifi className="h-4 w-4" /> : <WifiOff className="h-4 w-4" />}
+              {engineConnected && engineStatus && !engineStatus.sim_mode
+                ? `MT5 Connecté — ${engineStatus.account?.server}`
+                : engineConnected
+                  ? "Simulation (MT5 non connecté)"
+                  : "Moteur injoignable"}
+            </div>
+
+            <Button
+              onClick={handleMt5Connect}
+              disabled={engineLoading}
+              className="w-full bg-gradient-to-r from-emerald-500/20 to-cyan-500/20 hover:from-emerald-500/35 hover:to-cyan-500/35 text-emerald-400 border border-emerald-500/30 font-bold h-10 text-xs rounded-xl transition-all"
+            >
+              {engineLoading ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Wifi className="mr-1.5 h-4 w-4" />}
+              Se Connecter à Deriv MT5
+            </Button>
+          </div>
+
+          {/* Colonne droite : Diagnostic */}
+          <div className="rounded-xl border border-white/5 bg-white/[0.02] p-4 space-y-3">
+            <div className="flex items-center justify-between border-b border-white/5 pb-2.5">
+              <div className="flex items-center gap-2">
+                <Shield className="h-4 w-4 text-emerald-400" />
+                <span className="text-xs font-bold text-foreground">Diagnostic de Connexion</span>
+              </div>
+              <Button size="sm" onClick={handleMt5Test} disabled={mt5Testing} className="gap-1.5 text-xs font-bold rounded-xl">
+                <TestTube className="h-3.5 w-3.5" /> {mt5Testing ? "Test..." : "Diagnostic"}
+              </Button>
+            </div>
+            <div className="space-y-2">
+              {[
+                { key: "account", label: "Authentification Compte MT5" },
+                { key: "balance", label: "Récupération du Solde & Equity" },
+                { key: "instruments", label: `Cotations ${engineStatus?.config?.symbol ?? "instrument"}` },
+                { key: "trading", label: "Permission d'Exécution d'Ordres" },
+                { key: "vps", label: "Synchro VPS Serveur 24/7" },
+              ].map((check) => {
+                const passed = mt5TestResult ? (mt5TestResult as any)[check.key] : null;
+                return (
+                  <div key={check.key} className="flex items-center justify-between rounded-lg border border-white/5 bg-background/50 px-3 py-2">
+                    <span className="text-[11px] font-bold text-foreground">{check.label}</span>
+                    {passed === null ? (
+                      <span className="text-[11px] font-bold text-muted-foreground">Non testé</span>
+                    ) : passed ? (
+                      <span className="flex items-center gap-1 text-[11px] font-bold text-emerald-400"><CheckCircle2 className="h-3.5 w-3.5" /> OK</span>
+                    ) : (
+                      <span className="flex items-center gap-1 text-[11px] font-bold text-red-400"><XCircle className="h-3.5 w-3.5" /> Échec</span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      </CollapsibleSection>
+
+      {/* Notifications push — pleine largeur */}
+      <CollapsibleSection
+          icon={<Bell className="mt-1 h-5.5 w-5.5 text-amber-400 shrink-0" />}
+          title="Notifications push"
+          help="Alertes de trade et de pause risque envoyées même téléphone verrouillé."
+        >
+          {isIosNonSafari() ? (
+            <div className="rounded-xl border border-red-500/20 bg-red-500/5 p-3.5 text-xs text-red-400 leading-relaxed">
+              Sur iPhone, Chrome ne peut pas activer les notifications — c'est une restriction d'Apple, même en l'ajoutant à l'écran d'accueil ça ne marchera pas depuis Chrome. Ouvre <span className="font-bold">aupluriel.com dans Safari</span>, puis Partager → « Sur l'écran d'accueil ».
+            </div>
+          ) : !isPushSupported() ? (
+            <div className="rounded-xl border border-white/5 bg-white/[0.005] p-3.5 text-xs text-muted-foreground leading-relaxed">
+              Notifications push non supportées par ce navigateur.
+            </div>
+          ) : isIosNonStandalone() ? (
+            <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-3.5 text-xs text-amber-400 leading-relaxed">
+              Sur iPhone, ajoute Au Pluriel à l'écran d'accueil (Partager → « Sur l'écran d'accueil ») pour activer les notifications — un onglet Safari classique ne peut pas les recevoir téléphone verrouillé.
+            </div>
+          ) : (
+            <div
+              className={cn(
+                "flex items-center justify-between p-3.5 rounded-xl border transition-all",
+                pushEnabled ? "bg-amber-500/5 border-amber-500/20" : "bg-white/[0.005] border-white/5",
+              )}
+            >
+              <div>
+                <h4 className="text-xs md:text-sm text-neutral-200 font-bold">Activer les notifications</h4>
+                <p className="text-[11px] md:text-xs text-muted-foreground mt-0.5">
+                  Trade clôturé, bot en pause (protection de risque).
                 </p>
               </div>
-
-              <a
-                href="/compte-deriv"
-                className="block text-center text-[11px] font-bold uppercase tracking-wider text-emerald-400 hover:text-emerald-300 transition-colors pt-1"
-              >
-                → Page de connexion MT5 complète
-              </a>
+              <Switch checked={pushEnabled} disabled={pushSaving || !pushChecked} onCheckedChange={togglePush} />
             </div>
-          </CollapsibleSection>
-
-          {/* Risk Management Card */}
-          <CollapsibleSection
-            icon={<ShieldAlert className="mt-1 h-5.5 w-5.5 text-amber-400 shrink-0" />}
-            title="Gestion du risque"
-            help="Mise par défaut, risque par trade (%) et drawdown max (%). Appliqué automatiquement à tous les signaux et ordres."
-            defaultOpen
-          >
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <span className="text-[11px] md:text-xs font-bold uppercase tracking-wider text-neutral-300">
-                  Mise par défaut ($)
-                </span>
-                <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground font-mono text-xs md:text-sm">$</span>
-                  <input
-                    type="number"
-                    min={1}
-                    max={100}
-                    step={1}
-                    value={stake}
-                    onChange={(e) => setStake(Number(e.target.value))}
-                    className="w-full rounded-xl border border-border bg-background pl-7 pr-3 py-2.5 text-xs md:text-sm font-mono text-foreground focus:ring-1 focus:ring-cyan-500/50 outline-none"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <span className="text-[11px] md:text-xs font-bold uppercase tracking-wider text-neutral-300">
-                    Risque par trade (%)
-                  </span>
-                  <div className="relative">
-                    <input
-                      type="number"
-                      min={0.1}
-                      max={10}
-                      step={0.1}
-                      value={risk}
-                      onChange={(e) => setRisk(Number(e.target.value))}
-                      className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-xs md:text-sm font-mono text-foreground focus:ring-1 focus:ring-cyan-500/50 outline-none"
-                    />
-                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground font-mono text-xs md:text-sm">%</span>
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <span className="text-[11px] md:text-xs font-bold uppercase tracking-wider text-neutral-300">
-                    Drawdown Max (%)
-                  </span>
-                  <div className="relative">
-                    <input
-                      type="number"
-                      min={1}
-                      max={50}
-                      value={maxDd}
-                      onChange={(e) => setMaxDd(Number(e.target.value))}
-                      className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-xs md:text-sm font-mono text-foreground focus:ring-1 focus:ring-cyan-500/50 outline-none"
-                    />
-                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground font-mono text-xs md:text-sm">%</span>
-                  </div>
-                </div>
-              </div>
-
-              {risk > 2 && (
-                <div className="rounded-xl border border-red-500/20 bg-red-500/5 p-3.5 text-xs text-red-400 font-medium leading-relaxed">
-                  Risque par trade supérieur à 2% — non recommandé pour conserver votre capital sur le long terme.
-                </div>
-              )}
-            </div>
-          </CollapsibleSection>
-
-          {/* Push Notifications Card */}
-          <CollapsibleSection
-            icon={<Bell className="mt-1 h-5.5 w-5.5 text-amber-400 shrink-0" />}
-            title="Notifications push"
-            help="Alertes de trade et de pause risque envoyées même téléphone verrouillé."
-          >
-            {isIosNonSafari() ? (
-              <div className="rounded-xl border border-red-500/20 bg-red-500/5 p-3.5 text-xs text-red-400 leading-relaxed">
-                Sur iPhone, Chrome ne peut pas activer les notifications — c'est une restriction d'Apple, même en l'ajoutant à l'écran d'accueil ça ne marchera pas depuis Chrome. Ouvre <span className="font-bold">aupluriel.com dans Safari</span>, puis Partager → « Sur l'écran d'accueil ».
-              </div>
-            ) : !isPushSupported() ? (
-              <div className="rounded-xl border border-white/5 bg-white/[0.005] p-3.5 text-xs text-muted-foreground leading-relaxed">
-                Notifications push non supportées par ce navigateur.
-              </div>
-            ) : isIosNonStandalone() ? (
-              <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-3.5 text-xs text-amber-400 leading-relaxed">
-                Sur iPhone, ajoute Au Pluriel à l'écran d'accueil (Partager → « Sur l'écran d'accueil ») pour activer les notifications — un onglet Safari classique ne peut pas les recevoir téléphone verrouillé.
-              </div>
-            ) : (
-              <div
-                className={cn(
-                  "flex items-center justify-between p-3.5 rounded-xl border transition-all",
-                  pushEnabled ? "bg-amber-500/5 border-amber-500/20" : "bg-white/[0.005] border-white/5",
-                )}
-              >
-                <div>
-                  <h4 className="text-xs md:text-sm text-neutral-200 font-bold">Activer les notifications</h4>
-                  <p className="text-[11px] md:text-xs text-muted-foreground mt-0.5">
-                    Trade clôturé, bot en pause (protection de risque).
-                  </p>
-                </div>
-                <Switch checked={pushEnabled} disabled={pushSaving || !pushChecked} onCheckedChange={togglePush} />
-              </div>
-            )}
-          </CollapsibleSection>
-        </div>
-      </div>
+          )}
+        </CollapsibleSection>
 
       {/* Global Unified Action Bar */}
       <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-4 border-t border-white/5">
