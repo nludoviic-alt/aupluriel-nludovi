@@ -6,7 +6,7 @@ import {
   Server, Key, Shield, TestTube, ArrowUpRight, Save,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { useEngine } from "@/hooks/use-engine";
+import { useEngine, ENGINE_API_BASE } from "@/hooks/use-engine";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/compte-deriv")({
@@ -105,7 +105,7 @@ function CompteDerivPage() {
     setTesting(true);
     setTestResult(null);
     try {
-      const res = await fetch("http://localhost:8000/api/mt5/test");
+      const res = await fetch(`${ENGINE_API_BASE}/mt5/test`);
       if (res.ok) {
         setTestResult(await res.json());
       } else {

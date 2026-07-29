@@ -1,7 +1,13 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 
-const API_BASE = "http://localhost:8000/api";
-const WS_URL = "ws://localhost:8000/ws";
+// Adresse du moteur Python (FastAPI). Par défaut localhost:8000 — surchargez
+// avec VITE_ENGINE_HOST (ex: "192.168.1.42:8000") si le moteur tourne sur une
+// autre machine (ex: laptop Windows dédié au pont MT5, pendant que le
+// frontend tourne ailleurs, ex: un Mac).
+export const ENGINE_HOST = import.meta.env.VITE_ENGINE_HOST || "localhost:8000";
+export const ENGINE_API_BASE = `http://${ENGINE_HOST}/api`;
+const API_BASE = ENGINE_API_BASE;
+const WS_URL = `ws://${ENGINE_HOST}/ws`;
 
 export interface EngineStatus {
   running: boolean;
