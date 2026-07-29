@@ -116,7 +116,8 @@ class RiskEngine:
         self.state.last_trade_volume = volume
 
     def check(self, decision: Decision, atr: float, price: float,
-              stop_loss_price: Optional[float] = None) -> RiskCheck:
+              stop_loss_price: Optional[float] = None,
+              risk_pct_override: Optional[float] = None) -> RiskCheck:
         """Vérifie si un trade est autorisé selon toutes les règles de risque.
 
         Si `stop_loss_price` est fourni (ex: stop propre à une stratégie de
@@ -124,6 +125,11 @@ class RiskEngine:
         stop plutôt que sur la distance ATR par défaut — sinon le risque réel
         peut diverger fortement du risque annoncé (ex: Momentum utilise un
         stop à 2.25×ATR, Mean Reversion à 1.0×ATR, Breakout au support/résistance).
+
+        `risk_pct_override` permet à un appelant (ex: trade forcé manuellement)
+        de dimensionner ce trade précis sur un risque différent de
+        `config.risk_per_trade_pct`, sans muter la config partagée (qui serait
+        lue par le cycle du bot tournant sur un autre thread).
         """
         reasons = []
 
@@ -151,7 +157,10 @@ class RiskEngine:
 
         # 5. Stop-loss / take-profit — utilise le stop réel fourni par l'appelant s'il existe,
         #    sinon retombe sur le calcul par défaut basé sur l'ATR.
-        risk_amount = self.config.risk_amount(self.state.balance)
+        if risk_pct_override is not None:
+            risk_amount = self.state.balance * (risk_pct_override / 100.0)
+        else:
+            risk_amount = self.config.risk_amount(self.state.balance)
         if stop_loss_price is not None:
             stop_loss = stop_loss_price
             take_profit = 0.0  # non utilisé : l'appelant a déjà son propre take-profit

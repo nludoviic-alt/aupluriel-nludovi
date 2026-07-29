@@ -15,6 +15,7 @@ import {
   CreditCard,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
+import { useEngine } from "@/hooks/use-engine";
 import {
   Sidebar,
   SidebarContent,
@@ -190,6 +191,8 @@ export function AppSidebar() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const isActive = (p: string) => (p === "/" ? pathname === "/" : pathname.startsWith(p));
   const { user, logout } = useAuth();
+  const { status, connected } = useEngine();
+  const engineLive = connected && status ? !status.sim_mode : false;
   const { isMobile, setOpenMobile } = useSidebar();
 
   function handleNavClick() {
@@ -331,11 +334,15 @@ export function AppSidebar() {
           </div>
           <div className="min-w-0 flex-1">
             <div className="text-[12px] font-semibold text-foreground/80 leading-none">Au Pluriel Engine</div>
-            <div className="text-[10px] text-muted-foreground/50 mt-1 leading-none">Max 2% par trade · DÉMO · v1.0</div>
+            <div className="text-[10px] text-muted-foreground/50 mt-1 leading-none">
+              {connected ? `${status?.config?.risk_per_trade_pct ?? "—"}% par trade · ${engineLive ? "LIVE" : "DÉMO"}` : "Hors ligne"} · v1.0
+            </div>
           </div>
           <span className="relative flex h-2 w-2 shrink-0">
-            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-orange-400 opacity-50" />
-            <span className="relative inline-flex h-2 w-2 rounded-full bg-orange-500" />
+            {connected && (
+              <span className={cn("absolute inline-flex h-full w-full animate-ping rounded-full opacity-50", engineLive ? "bg-success" : "bg-orange-400")} />
+            )}
+            <span className={cn("relative inline-flex h-2 w-2 rounded-full", !connected ? "bg-muted-foreground/40" : engineLive ? "bg-success" : "bg-orange-500")} />
           </span>
         </div>
       </SidebarFooter>

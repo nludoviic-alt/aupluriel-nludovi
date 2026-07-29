@@ -57,6 +57,11 @@ class ConfigUpdate(BaseModel):
     allow_sell: Optional[bool] = None
 
 
+class ForceTradeRequest(BaseModel):
+    direction: str
+    risk_pct: Optional[float] = None
+
+
 class MT5Credentials(BaseModel):
     login: int
     password: str
@@ -188,6 +193,13 @@ async def update_config(cfg: ConfigUpdate):
     b = get_bot()
     b.update_config(cfg.dict(exclude_none=True))
     return {"config": b.status()["config"]}
+
+
+@app.post("/api/force-trade")
+async def force_trade(req: ForceTradeRequest):
+    """Ouvre une position manuellement (BUY/SELL) sur l'instrument configuré."""
+    b = get_bot()
+    return b.force_trade(req.direction, req.risk_pct)
 
 
 @app.post("/api/mt5/connect")
@@ -386,6 +398,8 @@ async def run_backtest(req: BacktestRequest):
         risk_per_trade_pct=req.risk_per_trade,
         min_confidence_threshold=req.min_confidence,
     )
+    config.spread_pips = req.spread_pips
+    config.commission_per_lot = req.commission_per_lot
     bt = Backtester(config)
 
     # Génère des données simulées pour le backtest

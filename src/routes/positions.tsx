@@ -1,9 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
-import {
-  Briefcase, X, TrendingUp, TrendingDown, Clock,
-  Edit3, Shield, Target, AlertTriangle, ChevronRight,
-} from "lucide-react";
+import { Briefcase, X, Eye, Shield } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useEngine } from "@/hooks/use-engine";
 import { cn } from "@/lib/utils";
@@ -94,7 +91,7 @@ function PositionsPage() {
                     className="border-b border-border/30 hover:bg-muted/20 cursor-pointer transition-colors"
                   >
                     <td className="py-3 px-3 font-mono text-muted-foreground">#{p.ticket}</td>
-                    <td className="py-3 px-3 font-bold text-foreground">{status?.config?.symbol ?? "Volatility 100"}</td>
+                    <td className="py-3 px-3 font-bold text-foreground">{status?.config?.symbol ?? "—"}</td>
                     <td className="py-3 px-3">
                       <span className={cn(
                         "px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider border",
@@ -115,9 +112,10 @@ function PositionsPage() {
                       <div className="flex items-center justify-center gap-1.5">
                         <button
                           onClick={(e) => { e.stopPropagation(); setSelectedTicket(p.ticket); }}
+                          title="Voir les détails (lecture seule)"
                           className="h-8 w-8 rounded-lg border border-border/50 hover:bg-accent flex items-center justify-center transition-colors"
                         >
-                          <Edit3 className="h-3.5 w-3.5 text-muted-foreground" />
+                          <Eye className="h-3.5 w-3.5 text-muted-foreground" />
                         </button>
                         <button
                           onClick={(e) => { e.stopPropagation(); closePosition(p.ticket); }}

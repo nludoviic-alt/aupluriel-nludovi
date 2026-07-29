@@ -147,6 +147,7 @@ class Backtester:
                         pnl = (exit_price - pos["entry"]) * pos["volume"] * 100
                     else:
                         pnl = (pos["entry"] - exit_price) * pos["volume"] * 100
+                    pnl -= getattr(self.config, "commission_per_lot", 0.0) * pos["volume"]
 
                     trade = BacktestTrade(
                         entry_time=pos["time"],

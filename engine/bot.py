@@ -50,6 +50,7 @@ class TradingBot:
         self._callbacks: List[Callable] = []
         self._known_tickets: set = set()
         self._tracked_positions: Dict[int, Position] = {}
+        self._manual_tickets: set = set()
 
     def add_callback(self, cb: Callable):
         """Ajoute un callback appelé à chaque cycle (pour WebSocket/API)."""
@@ -316,17 +317,93 @@ class TradingBot:
         self.mt5.close_position(pos.ticket)
         self._record_trade_result(pos, result)
 
+    def force_trade(self, direction: str, risk_pct: Optional[float] = None) -> dict:
+        """Ouvre une position manuellement (hors cycle de décision automatique).
+
+        Réutilise le moteur de risque exactement comme le cycle automatique
+        (kill-switch, arrêt sur pertes, positions max, perte quotidienne) —
+        seul le seuil de confiance est court-circuité, puisque c'est un humain
+        qui décide ici. Toujours étiqueté stratégie "manual" : ne doit jamais
+        être confondu avec les stats d'une vraie stratégie automatique.
+        """
+        try:
+            sig_dir = SignalDirection(direction.upper())
+        except ValueError:
+            return {"success": False, "reason": f"Direction invalide: {direction}"}
+        if sig_dir == SignalDirection.NEUTRAL:
+            return {"success": False, "reason": "Direction NEUTRAL non autorisée pour un trade forcé"}
+
+        analysis = self._last_analysis
+        if analysis is None:
+            data = {}
+            for tf in self.config.timeframes:
+                candles = self.mt5.get_candles(tf, 200)
+                if candles is not None:
+                    data[tf.value] = candles
+            if not data:
+                return {"success": False, "reason": "Pas de données marché disponibles"}
+            analysis = self.analysis.analyze(data)
+        m15_ind = analysis.indicators.get(Timeframe.M15.value)
+        atr = m15_ind.atr if m15_ind else analysis.price * 0.01
+        price = analysis.price
+
+        fake_decision = type("D", (), {"direction": sig_dir, "confidence": 100})()
+        risk_check = self.risk.check(fake_decision, atr, price, risk_pct_override=risk_pct)
+        if not risk_check.approved:
+            return {"success": False, "reason": risk_check.reason}
+
+        volume = risk_check.volume
+        if volume <= 0:
+            return {"success": False, "reason": "Volume calculé = 0"}
+
+        order_result = self.mt5.send_order(
+            direction=sig_dir.value, volume=volume,
+            stop_loss=risk_check.stop_loss, take_profit=risk_check.take_profit,
+        )
+        if not order_result.success:
+            return {"success": False, "reason": order_result.message}
+
+        self.risk.state.last_trade_volume = volume
+        self._manual_tickets.add(order_result.ticket)
+        if self.position_manager:
+            self.position_manager.register(type("P", (), {
+                "ticket": order_result.ticket, "direction": sig_dir.value, "volume": volume,
+                "entry_price": order_result.price, "stop_loss": risk_check.stop_loss,
+                "take_profit": risk_check.take_profit,
+            })())
+        self.logger.info(
+            f"Trade FORCÉ {sig_dir.value} exécuté — volume: {volume}, "
+            f"SL: {risk_check.stop_loss:.2f}, TP: {risk_check.take_profit:.2f}"
+        )
+        return {
+            "success": True, "ticket": order_result.ticket, "volume": volume,
+            "stop_loss": risk_check.stop_loss, "take_profit": risk_check.take_profit,
+            "price": order_result.price,
+        }
+
     def _record_trade_result(self, pos: Position, result: str, already_closed: bool = False):
         """Enregistre le résultat d'une position fermée pour le risque, l'adaptation et l'anomalie."""
         self.risk.record_trade_result(result, pos.volume)
+        if pos.ticket in self._manual_tickets:
+            self._manual_tickets.discard(pos.ticket)
+            strategy_name = "manual"
+            confidence = 100.0
+        else:
+            strategy_name = self._last_strategy_signal.strategy if self._last_strategy_signal else "trend_following"
+            confidence = self._last_decision.confidence if self._last_decision else 50
+        exit_price = pos.current_price if already_closed else self.mt5.get_current_price()
         self.logger.trade(
             f"Position {pos.ticket} fermée — {result.upper()}, P&L: {pos.profit:.2f}",
-            {"ticket": pos.ticket, "result": result, "profit": pos.profit, "volume": pos.volume},
+            {
+                "ticket": pos.ticket, "result": result, "profit": pos.profit, "volume": pos.volume,
+                "symbol": pos.symbol, "direction": pos.direction,
+                "entry_price": pos.entry_price, "exit_price": exit_price,
+                "strategy": strategy_name, "confidence": confidence,
+            },
         )
 
         # Alimente l'apprentissage adaptatif
         if self.adaptive:
-            strategy_name = self._last_strategy_signal.strategy if self._last_strategy_signal else "trend_following"
             regime_name = self._last_regime.regime.value if self._last_regime else "unknown"
             indicators = {}
             if self._last_analysis:
@@ -336,14 +413,14 @@ class TradingBot:
             self.adaptive.record_trade(
                 strategy=strategy_name,
                 direction=pos.direction,
-                confidence=self._last_decision.confidence if self._last_decision else 50,
+                confidence=confidence,
                 result=result,
                 pnl=pos.profit,
                 volume=pos.volume,
                 regime=regime_name,
                 indicators=indicators,
                 entry_price=pos.entry_price,
-                exit_price=pos.current_price if already_closed else self.mt5.get_current_price(),
+                exit_price=exit_price,
             )
 
         # Alimente le détecteur d'anomalies

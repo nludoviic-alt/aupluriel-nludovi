@@ -1,29 +1,22 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import {
-  Bar,
-  BarChart,
-  ComposedChart,
-  Line,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
+  Area, AreaChart, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
-import { CandlestickChart } from "@/components/candlestick-chart";
-import { useDerivCandles } from "@/hooks/use-deriv";
-import { GRANULARITY, SYMBOLS } from "@/lib/deriv";
-import { bollinger, ema, macd, rsi, stochastic } from "@/lib/indicators";
+import { useEngine } from "@/hooks/use-engine";
+import { useRollingSeries } from "@/hooks/use-rolling-series";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/marches")({
-  head: () => ({ meta: [{ title: "Marchés — PLURIEL" }] }),
+  head: () => ({ meta: [{ title: "Marchés — Au Pluriel" }] }),
   component: MarketsPage,
 });
 
-const TFS = ["1m", "5m", "15m", "1H", "4H", "1D"] as const;
-type ChartMode = "candles" | "line";
-type SubPanel = "rsi" | "macd" | "stoch";
+const TIMEFRAMES = [
+  { key: "5min", label: "5 min" },
+  { key: "15min", label: "15 min" },
+  { key: "1h", label: "1h" },
+] as const;
 
 const CHART_STYLE = {
   background: "oklch(0.20 0.035 260)",
@@ -33,278 +26,219 @@ const CHART_STYLE = {
 };
 
 function MarketsPage() {
-  const [symbol, setSymbol] = useState(SYMBOLS[0]);
-  const [tf, setTf] = useState<(typeof TFS)[number]>("15m");
-  const [mode, setMode] = useState<ChartMode>("candles");
-  const [subPanel, setSubPanel] = useState<SubPanel>("rsi");
-  const { candles, loading } = useDerivCandles(symbol.deriv, GRANULARITY[tf], 200);
+  const { status, connected } = useEngine();
+  const [tf, setTf] = useState<(typeof TIMEFRAMES)[number]["key"]>("15min");
 
-  const data = useMemo(() => {
-    const closes = candles.map((c) => c.close);
-    const highs = candles.map((c) => c.high);
-    const lows = candles.map((c) => c.low);
-    const e50 = ema(closes, 50);
-    const e200 = ema(closes, 200);
-    const bb = bollinger(closes, 20, 2);
-    const r = rsi(closes, 14);
-    const m = macd(closes);
-    const stoch = stochastic(highs, lows, closes, 14, 3);
-    return candles.map((c, i) => ({
-      t: c.epoch * 1000,
-      close: c.close,
-      high: c.high,
-      low: c.low,
-      open: c.open,
-      ema50: e50[i],
-      ema200: e200[i],
-      bbU: bb.upper[i],
-      bbL: bb.lower[i],
-      bbM: bb.middle[i],
-      rsi: r[i],
-      macd: m.macd[i],
-      signal: m.signal[i],
-      hist: m.histogram[i],
-      stochK: stoch.k[i],
-      stochD: stoch.d[i],
-    }));
-  }, [candles]);
+  const analysis = status?.last_analysis;
+  const signals = analysis?.signals ?? [];
+  const indicators = analysis?.indicators?.[tf] ?? null;
 
-  // Price stats
-  const stats = useMemo(() => {
-    if (!data.length) return null;
-    const last = data[data.length - 1];
-    const first = data[0];
-    const highs = data.map((d) => d.high);
-    const lows = data.map((d) => d.low);
-    const high24 = Math.max(...highs);
-    const low24 = Math.min(...lows);
-    const change = first.close ? ((last.close - first.close) / first.close) * 100 : 0;
-    return { last: last.close, high24, low24, change };
-  }, [data]);
+  const priceSeries = useRollingSeries(analysis?.price, 60);
+  const rsiSeries = useRollingSeries(indicators?.rsi, 60);
 
-  // Memoized so CandlestickChart's React.memo actually skips re-rendering when
-  // unrelated state changes elsewhere on the page (new literals every render
-  // would otherwise always look "changed" to a shallow prop comparison).
-  const candleData = useMemo(
-    () => data.map((d) => ({ t: d.t, open: d.open, high: d.high, low: d.low, close: d.close })),
-    [data],
-  );
-  const overlays = useMemo(
-    () => ({
-      ema50: data.map((d) => d.ema50),
-      ema200: data.map((d) => d.ema200),
-      bbUpper: data.map((d) => d.bbU),
-      bbLower: data.map((d) => d.bbL),
-      bbMiddle: data.map((d) => d.bbM),
-    }),
-    [data],
-  );
+  const priceData = useMemo(() => priceSeries.map((price, i) => ({ x: i, price })), [priceSeries]);
+  const rsiData = useMemo(() => rsiSeries.map((rsi, i) => ({ x: i, rsi })), [rsiSeries]);
+
+  const firstPrice = priceSeries[0] ?? null;
+  const lastPrice = priceSeries[priceSeries.length - 1] ?? null;
+  const priceChange = firstPrice ? ((lastPrice! - firstPrice) / firstPrice) * 100 : null;
+
+  const tfSignals = signals.filter((s) => s.timeframe === tf);
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-4 md:p-6 space-y-6 max-w-[1600px] mx-auto">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Marchés</h1>
-          <p className="text-sm text-muted-foreground">Charts OHLC + indicateurs techniques en direct.</p>
+          <h1 className="text-2xl font-bold tracking-tight text-foreground">Marchés</h1>
+          <p className="text-sm text-muted-foreground">
+            {analysis?.symbol ?? status?.config?.symbol ?? "—"} · analyse technique en direct du moteur
+          </p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <select
-            value={symbol.deriv}
-            onChange={(e) => setSymbol(SYMBOLS.find((s) => s.deriv === e.target.value)!)}
-            className="rounded-md border border-border bg-card/60 px-3 py-1.5 text-sm"
-          >
-            {SYMBOLS.map((s) => (
-              <option key={s.deriv} value={s.deriv}>{s.label}</option>
-            ))}
-          </select>
-          <div className="inline-flex rounded-lg border border-border bg-card/40 p-1 text-xs">
-            {TFS.map((t) => (
-              <button
-                key={t}
-                onClick={() => setTf(t)}
-                className={cn(
-                  "rounded-md px-2.5 py-1 transition-colors",
-                  tf === t
-                    ? "bg-[color:var(--brand-cyan)]/15 text-[color:var(--brand-cyan)]"
-                    : "text-muted-foreground hover:text-foreground",
-                )}
-              >
-                {t}
-              </button>
-            ))}
-          </div>
-          <div className="inline-flex rounded-lg border border-border bg-card/40 p-1 text-xs">
-            {(["candles", "line"] as const).map((m) => (
-              <button
-                key={m}
-                onClick={() => setMode(m)}
-                className={cn(
-                  "rounded-md px-2.5 py-1 transition-colors capitalize",
-                  mode === m
-                    ? "bg-[color:var(--brand-cyan)]/15 text-[color:var(--brand-cyan)]"
-                    : "text-muted-foreground hover:text-foreground",
-                )}
-              >
-                {m === "candles" ? "Bougies" : "Ligne"}
-              </button>
-            ))}
-          </div>
+        <div className="inline-flex rounded-lg border border-border bg-card/40 p-1 text-xs">
+          {TIMEFRAMES.map((t) => (
+            <button
+              key={t.key}
+              onClick={() => setTf(t.key)}
+              className={cn(
+                "rounded-md px-3 py-1.5 transition-colors",
+                tf === t.key
+                  ? "bg-[color:var(--brand-cyan)]/15 text-[color:var(--brand-cyan)]"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              {t.label}
+            </button>
+          ))}
         </div>
       </div>
 
-      {/* Price stats bar */}
-      {stats && (
-        <div className="flex flex-wrap gap-4 text-sm">
-          <div>
-            <span className="text-muted-foreground text-xs uppercase tracking-wider">Prix</span>
-            <div className="font-bold text-foreground text-lg">
-              {stats.last.toFixed(symbol.market === "forex" ? 5 : 2)}
-            </div>
-          </div>
-          <div>
-            <span className="text-muted-foreground text-xs uppercase tracking-wider">Variation</span>
-            <div className={cn("font-semibold", stats.change >= 0 ? "text-[color:var(--bull)]" : "text-[color:var(--bear)]")}>
-              {stats.change >= 0 ? "+" : ""}{stats.change.toFixed(2)}%
-            </div>
-          </div>
-          <div>
-            <span className="text-muted-foreground text-xs uppercase tracking-wider">Haut</span>
-            <div className="font-medium">{stats.high24.toFixed(symbol.market === "forex" ? 5 : 2)}</div>
-          </div>
-          <div>
-            <span className="text-muted-foreground text-xs uppercase tracking-wider">Bas</span>
-            <div className="font-medium">{stats.low24.toFixed(symbol.market === "forex" ? 5 : 2)}</div>
-          </div>
+      {!connected ? (
+        <div className="glass-panel rounded-xl p-12 text-center text-sm text-muted-foreground">
+          Moteur hors ligne — aucune donnée de marché disponible.
         </div>
-      )}
+      ) : !analysis ? (
+        <div className="glass-panel rounded-xl p-12 text-center text-sm text-muted-foreground">
+          En attente de la première analyse du moteur (le bot doit être actif).
+        </div>
+      ) : (
+        <>
+          {/* Price stats bar */}
+          <div className="flex flex-wrap gap-4 text-sm">
+            <div>
+              <span className="text-muted-foreground text-xs uppercase tracking-wider">Prix</span>
+              <div className="font-bold text-foreground text-lg font-mono">{analysis.price.toFixed(2)}</div>
+            </div>
+            {priceChange !== null && (
+              <div>
+                <span className="text-muted-foreground text-xs uppercase tracking-wider">Variation (session)</span>
+                <div className={cn("font-semibold", priceChange >= 0 ? "text-[color:var(--bull)]" : "text-[color:var(--bear)]")}>
+                  {priceChange >= 0 ? "+" : ""}{priceChange.toFixed(2)}%
+                </div>
+              </div>
+            )}
+            <div>
+              <span className="text-muted-foreground text-xs uppercase tracking-wider">Tendance globale</span>
+              <div className={cn(
+                "font-semibold",
+                analysis.global_trend === "BUY" ? "text-[color:var(--bull)]" : analysis.global_trend === "SELL" ? "text-[color:var(--bear)]" : "text-muted-foreground"
+              )}>
+                {analysis.global_trend} ({analysis.trend_alignment}/3 MTF)
+              </div>
+            </div>
+            {indicators && (
+              <>
+                <div>
+                  <span className="text-muted-foreground text-xs uppercase tracking-wider">Support</span>
+                  <div className="font-medium font-mono">{indicators.support.toFixed(2)}</div>
+                </div>
+                <div>
+                  <span className="text-muted-foreground text-xs uppercase tracking-wider">Résistance</span>
+                  <div className="font-medium font-mono">{indicators.resistance.toFixed(2)}</div>
+                </div>
+              </>
+            )}
+          </div>
 
-      <div className="glass-panel rounded-xl p-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-base font-semibold">
-            {symbol.label} <span className="text-xs font-normal text-muted-foreground">· {tf}</span>
-          </h2>
-        </div>
-        <div className="mt-3 h-[380px]">
-          {loading ? (
-            <div className="grid h-full place-items-center text-sm text-muted-foreground">Chargement…</div>
-          ) : mode === "candles" ? (
-            <CandlestickChart data={candleData} overlays={overlays} chartHeight={380} />
-          ) : (
-            <ResponsiveContainer width="100%" height="100%">
-              <ComposedChart data={data}>
-                <XAxis dataKey="t" tickFormatter={(v) => new Date(v).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} stroke="oklch(0.7 0.03 255 / 0.5)" fontSize={11} minTickGap={40} />
-                <YAxis domain={["auto", "auto"]} stroke="oklch(0.7 0.03 255 / 0.5)" fontSize={11} width={70} />
-                <Tooltip contentStyle={CHART_STYLE} labelFormatter={(v) => new Date(Number(v)).toLocaleString()} />
-                <Line type="monotone" dataKey="close" stroke="var(--brand-cyan)" strokeWidth={1.6} dot={false} name="Close" />
-                <Line type="monotone" dataKey="ema50" stroke="var(--brand-amber)" strokeWidth={1.2} dot={false} name="EMA 50" />
-                <Line type="monotone" dataKey="ema200" stroke="var(--brand-violet)" strokeWidth={1.2} dot={false} name="EMA 200" />
-                <Line type="monotone" dataKey="bbU" stroke="oklch(0.7 0.04 255 / 0.55)" strokeWidth={1} dot={false} strokeDasharray="4 4" name="BB+" />
-                <Line type="monotone" dataKey="bbL" stroke="oklch(0.7 0.04 255 / 0.55)" strokeWidth={1} dot={false} strokeDasharray="4 4" name="BB-" />
-              </ComposedChart>
-            </ResponsiveContainer>
+          {/* Price chart (échantillons réels accumulés) */}
+          <div className="glass-panel rounded-xl p-4">
+            <h2 className="text-base font-semibold mb-3">Prix en direct</h2>
+            <div className="h-[320px]">
+              {priceData.length < 2 ? (
+                <div className="grid h-full place-items-center text-sm text-muted-foreground">En attente de données réelles...</div>
+              ) : (
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={priceData}>
+                    <defs>
+                      <linearGradient id="marchesPriceGrad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="var(--brand-cyan)" stopOpacity={0.3} />
+                        <stop offset="95%" stopColor="var(--brand-cyan)" stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <XAxis dataKey="x" hide />
+                    <YAxis domain={["auto", "auto"]} stroke="oklch(0.7 0.03 255 / 0.5)" fontSize={11} width={70} tickFormatter={(v) => v.toFixed(2)} />
+                    <Tooltip contentStyle={CHART_STYLE} formatter={(v: any) => [Number(v).toFixed(2), "Prix"]} />
+                    <Area type="monotone" dataKey="price" stroke="var(--brand-cyan)" strokeWidth={1.6} fill="url(#marchesPriceGrad)" />
+                  </AreaChart>
+                </ResponsiveContainer>
+              )}
+            </div>
+          </div>
+
+          {/* Indicators for selected timeframe */}
+          {indicators && (
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="glass-panel rounded-xl p-4">
+                <div className="flex items-center gap-3 mb-2">
+                  <h3 className="text-sm font-semibold">RSI (14) — {tf}</h3>
+                  <span className={cn(
+                    "text-xs font-semibold rounded-md px-2 py-0.5",
+                    indicators.rsi > 70
+                      ? "bg-[color:var(--bear)]/10 text-[color:var(--bear)]"
+                      : indicators.rsi < 30
+                        ? "bg-[color:var(--bull)]/10 text-[color:var(--bull)]"
+                        : "bg-muted/40 text-muted-foreground"
+                  )}>
+                    {indicators.rsi.toFixed(1)}
+                    {indicators.rsi > 70 ? " Suracheté" : indicators.rsi < 30 ? " Survendu" : ""}
+                  </span>
+                </div>
+                <div className="h-40">
+                  {rsiData.length < 2 ? (
+                    <div className="grid h-full place-items-center text-xs text-muted-foreground">En attente de données réelles...</div>
+                  ) : (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart data={rsiData}>
+                        <XAxis dataKey="x" hide />
+                        <YAxis domain={[0, 100]} stroke="oklch(0.7 0.03 255 / 0.5)" fontSize={11} width={40} ticks={[0, 30, 50, 70, 100]} />
+                        <Tooltip contentStyle={CHART_STYLE} />
+                        <Area type="monotone" dataKey="rsi" stroke="var(--brand-cyan)" strokeWidth={1.5} fill="none" />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  )}
+                </div>
+              </div>
+
+              <div className="glass-panel rounded-xl p-4 space-y-3">
+                <h3 className="text-sm font-semibold">Autres indicateurs — {tf}</h3>
+                <div className="grid grid-cols-2 gap-3 text-sm">
+                  <div>
+                    <span className="text-muted-foreground text-xs uppercase tracking-wider">EMA rapide / lente</span>
+                    <div className="font-mono font-medium">{indicators.ema_fast.toFixed(2)} / {indicators.ema_slow.toFixed(2)}</div>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground text-xs uppercase tracking-wider">MACD histogram</span>
+                    <div className={cn("font-mono font-medium", indicators.macd_histogram >= 0 ? "text-[color:var(--bull)]" : "text-[color:var(--bear)]")}>
+                      {indicators.macd_histogram.toFixed(4)}
+                    </div>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground text-xs uppercase tracking-wider">ATR</span>
+                    <div className="font-mono font-medium">{indicators.atr.toFixed(4)}</div>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground text-xs uppercase tracking-wider">Volatilité</span>
+                    <div className="font-mono font-medium">{indicators.volatility_pct.toFixed(2)}%</div>
+                  </div>
+                  <div className="col-span-2">
+                    <span className="text-muted-foreground text-xs uppercase tracking-wider">Tendance ({tf})</span>
+                    <div className={cn(
+                      "font-semibold",
+                      indicators.trend === "BUY" ? "text-[color:var(--bull)]" : indicators.trend === "SELL" ? "text-[color:var(--bear)]" : "text-muted-foreground"
+                    )}>
+                      {indicators.trend}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
           )}
-        </div>
-      </div>
 
-      {/* Sub-panel tabs */}
-      <div className="inline-flex rounded-lg border border-border bg-card/40 p-1 text-xs">
-        {(["rsi", "macd", "stoch"] as const).map((p) => (
-          <button
-            key={p}
-            onClick={() => setSubPanel(p)}
-            className={cn(
-              "rounded-md px-3 py-1 uppercase tracking-wider transition-colors",
-              subPanel === p
-                ? "bg-[color:var(--brand-cyan)]/15 text-[color:var(--brand-cyan)]"
-                : "text-muted-foreground hover:text-foreground",
-            )}
-          >
-            {p === "stoch" ? "Stoch" : p.toUpperCase()}
-          </button>
-        ))}
-      </div>
-
-      {subPanel === "rsi" && (
-        <div className="glass-panel rounded-xl p-4">
-          <div className="flex items-center gap-3 mb-2">
-            <h3 className="text-sm font-semibold">RSI (14)</h3>
-            {data.length > 0 && data[data.length - 1].rsi !== null && (
-              <span className={cn(
-                "text-xs font-semibold rounded-md px-2 py-0.5",
-                (data[data.length - 1].rsi ?? 50) > 70
-                  ? "bg-[color:var(--bear)]/10 text-[color:var(--bear)]"
-                  : (data[data.length - 1].rsi ?? 50) < 30
-                    ? "bg-[color:var(--bull)]/10 text-[color:var(--bull)]"
-                    : "bg-muted/40 text-muted-foreground"
-              )}>
-                {data[data.length - 1].rsi?.toFixed(1)}
-                {(data[data.length - 1].rsi ?? 50) > 70 ? " Suracheté" : (data[data.length - 1].rsi ?? 50) < 30 ? " Survendu" : ""}
-              </span>
+          {/* Signals for selected timeframe */}
+          <div className="glass-panel rounded-xl p-4">
+            <h3 className="text-sm font-semibold mb-3">Signaux détectés — {tf}</h3>
+            {tfSignals.length === 0 ? (
+              <div className="text-xs text-muted-foreground text-center py-4">Aucun signal sur cette timeframe</div>
+            ) : (
+              <div className="space-y-2">
+                {tfSignals.map((s, i) => (
+                  <div key={i} className="flex items-center justify-between rounded-lg border border-border/40 bg-background/40 px-3 py-2 text-xs">
+                    <div className="flex items-center gap-2">
+                      <span className={cn(
+                        "px-1.5 py-0.5 rounded font-bold uppercase",
+                        s.direction === "BUY" ? "bg-[color:var(--bull)]/15 text-[color:var(--bull)]" : "bg-[color:var(--bear)]/15 text-[color:var(--bear)]"
+                      )}>
+                        {s.direction}
+                      </span>
+                      <span className="text-foreground">{s.type.replace(/_/g, " ")}</span>
+                    </div>
+                    <span className="text-muted-foreground">{s.description}</span>
+                  </div>
+                ))}
+              </div>
             )}
           </div>
-          <div className="h-44">
-            <ResponsiveContainer width="100%" height="100%">
-              <ComposedChart data={data}>
-                <XAxis dataKey="t" hide />
-                <YAxis domain={[0, 100]} stroke="oklch(0.7 0.03 255 / 0.5)" fontSize={11} width={40} ticks={[0, 30, 50, 70, 100]} />
-                <Tooltip contentStyle={CHART_STYLE} />
-                <Line type="monotone" dataKey="rsi" stroke="var(--brand-cyan)" strokeWidth={1.5} dot={false} />
-              </ComposedChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-      )}
-
-      {subPanel === "macd" && (
-        <div className="glass-panel rounded-xl p-4">
-          <h3 className="text-sm font-semibold mb-2">MACD (12,26,9)</h3>
-          <div className="h-44">
-            <ResponsiveContainer width="100%" height="100%">
-              <ComposedChart data={data}>
-                <XAxis dataKey="t" hide />
-                <YAxis stroke="oklch(0.7 0.03 255 / 0.5)" fontSize={11} width={40} />
-                <Tooltip contentStyle={CHART_STYLE} />
-                <Bar dataKey="hist" fill="var(--brand-violet)" />
-                <Line type="monotone" dataKey="macd" stroke="var(--brand-cyan)" strokeWidth={1.5} dot={false} />
-                <Line type="monotone" dataKey="signal" stroke="oklch(0.83 0.17 85)" strokeWidth={1.2} dot={false} />
-              </ComposedChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-      )}
-
-      {subPanel === "stoch" && (
-        <div className="glass-panel rounded-xl p-4">
-          <div className="flex items-center gap-3 mb-2">
-            <h3 className="text-sm font-semibold">Stochastique (14,3)</h3>
-            {data.length > 0 && data[data.length - 1].stochK !== null && (
-              <span className={cn(
-                "text-xs font-semibold rounded-md px-2 py-0.5",
-                (data[data.length - 1].stochK ?? 50) > 80
-                  ? "bg-[color:var(--bear)]/10 text-[color:var(--bear)]"
-                  : (data[data.length - 1].stochK ?? 50) < 20
-                    ? "bg-[color:var(--bull)]/10 text-[color:var(--bull)]"
-                    : "bg-muted/40 text-muted-foreground"
-              )}>
-                K: {data[data.length - 1].stochK?.toFixed(1)}
-              </span>
-            )}
-          </div>
-          <div className="h-44">
-            <ResponsiveContainer width="100%" height="100%">
-              <ComposedChart data={data}>
-                <XAxis dataKey="t" hide />
-                <YAxis domain={[0, 100]} stroke="oklch(0.7 0.03 255 / 0.5)" fontSize={11} width={40} ticks={[0, 20, 50, 80, 100]} />
-                <Tooltip contentStyle={CHART_STYLE} />
-                <Line type="monotone" dataKey="stochK" stroke="var(--brand-cyan)" strokeWidth={1.5} dot={false} name="%K" />
-                <Line type="monotone" dataKey="stochD" stroke="oklch(0.83 0.17 85)" strokeWidth={1.2} dot={false} name="%D" />
-              </ComposedChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
+        </>
       )}
     </div>
   );
 }
-
-export const _ = BarChart;

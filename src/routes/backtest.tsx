@@ -1,14 +1,13 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
-import {
-  FlaskConical, Play, TrendingUp, TrendingDown,
-  Activity, Target, AlertTriangle, BarChart3, Sparkles, Shield,
-} from "lucide-react";
+import { toast } from "sonner";
+import { FlaskConical, Play, Sparkles, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer,
   CartesianGrid,
 } from "recharts";
+import { ENGINE_API_BASE } from "@/hooks/use-engine";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/backtest")({
@@ -31,7 +30,6 @@ interface BacktestResult {
   avg_loss: number;
   sharpe_ratio: number;
   sortino_ratio: number;
-  avg_slippage: number;
   equity_curve: number[];
   trades: Array<{
     entry_time: number;
@@ -50,6 +48,7 @@ interface BacktestResult {
 function BacktestPage() {
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<BacktestResult | null>(null);
+  const [isDemoResult, setIsDemoResult] = useState(false);
   const [config, setConfig] = useState({
     initial_capital: 1000,
     months: 6,
@@ -62,24 +61,32 @@ function BacktestPage() {
   const runBacktest = async () => {
     setRunning(true);
     try {
-      const res = await fetch("http://localhost:8000/api/backtest", {
+      const res = await fetch(`${ENGINE_API_BASE}/backtest`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(config),
       });
       if (res.ok) {
         setResult(await res.json());
+        setIsDemoResult(false);
       } else {
+        toast.error("Backtest réel indisponible — affichage d'un résultat de démonstration.");
         setResult(generateDemoResult(config));
+        setIsDemoResult(true);
       }
     } catch {
+      toast.error("Moteur injoignable — affichage d'un résultat de démonstration.");
       setResult(generateDemoResult(config));
+      setIsDemoResult(true);
     } finally {
       setRunning(false);
     }
   };
 
   const equityData = result?.equity_curve.map((v, i) => ({ x: i, equity: v })) ?? [];
+  const avgSlippage = result?.trades?.length
+    ? result.trades.reduce((s, t) => s + (t.slippage ?? 0), 0) / result.trades.length
+    : 0;
 
   return (
     <div className="p-4 md:p-6 space-y-6 max-w-[1600px] mx-auto">
@@ -177,6 +184,12 @@ function BacktestPage() {
       {/* Results Section */}
       {result && (
         <div className="space-y-5">
+          {isDemoResult && (
+            <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 flex items-center gap-2.5 text-xs font-semibold text-amber-400">
+              <AlertTriangle className="h-4 w-4 shrink-0" />
+              Résultat de démonstration (généré localement) — le moteur de backtest réel n'a pas répondu.
+            </div>
+          )}
           {/* KPI Summary Cards */}
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
             <div className="rounded-2xl border border-border/50 bg-card/60 p-4">
@@ -212,7 +225,7 @@ function BacktestPage() {
             <div className="rounded-2xl border border-border/50 bg-card/60 p-4">
               <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Slippage Moyen</span>
               <p className="text-xl font-black font-mono text-warning mt-1">
-                {result.avg_slippage.toFixed(4)} pts
+                {avgSlippage.toFixed(4)} pts
               </p>
             </div>
           </div>
@@ -305,7 +318,6 @@ function generateDemoResult(cfg: any): BacktestResult {
     avg_loss: 2.5,
     sharpe_ratio: 1.42,
     sortino_ratio: 1.88,
-    avg_slippage: 0.0125,
     equity_curve: equity,
     trades,
   };

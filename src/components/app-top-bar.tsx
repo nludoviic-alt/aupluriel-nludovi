@@ -26,9 +26,9 @@ export function AppTopBar() {
   const { open, toggleSidebar } = useSidebar();
   const meta = pageMeta[pathname] ?? pageMeta["/"];
 
-  const balance = status?.account?.balance ?? 1250.50;
-  const dailyPnl = status?.risk?.daily_pnl ?? 14.20;
-  const isRunning = status?.running ?? false;
+  const balance = status?.account?.balance;
+  const dailyPnl = status?.risk?.daily_pnl;
+  const isLive = connected && status ? !status.sim_mode : false;
 
   return (
     <header className="sticky top-0 z-30 border-b border-border/50 bg-background/80 backdrop-blur-xl">
@@ -69,23 +69,23 @@ export function AppTopBar() {
           {/* Mobile Balance pill */}
           <div className="flex sm:hidden items-center gap-1.5 rounded-full border border-border/60 bg-card/60 px-3 py-1 text-xs font-bold font-mono">
             <Wallet className="h-3.5 w-3.5 text-primary" />
-            <span>${balance.toFixed(2)}</span>
+            <span>{balance !== undefined ? `$${balance.toFixed(2)}` : "—"}</span>
           </div>
 
           {/* Desktop Balance badge */}
           <div className="hidden sm:flex items-center gap-2 rounded-full border border-border/50 bg-card/60 px-3.5 py-1.5 text-xs font-bold font-mono">
             <Wallet className="h-4 w-4 text-primary" />
-            <span className="text-foreground">${balance.toFixed(2)}</span>
+            <span className="text-foreground">{balance !== undefined ? `$${balance.toFixed(2)}` : "—"}</span>
             <span className="text-[10px] text-muted-foreground font-sans uppercase">USD</span>
           </div>
 
           {/* Desktop Daily PnL badge */}
           <div className={cn(
             "hidden md:flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-xs font-mono font-bold",
-            dailyPnl >= 0 ? "border-success/30 bg-success/10 text-success" : "border-destructive/30 bg-destructive/10 text-destructive"
+            (dailyPnl ?? 0) >= 0 ? "border-success/30 bg-success/10 text-success" : "border-destructive/30 bg-destructive/10 text-destructive"
           )}>
-            {dailyPnl >= 0 ? <TrendingUp className="h-3.5 w-3.5" /> : <TrendingDown className="h-3.5 w-3.5" />}
-            <span>{dailyPnl >= 0 ? "+" : ""}${dailyPnl.toFixed(2)}</span>
+            {(dailyPnl ?? 0) >= 0 ? <TrendingUp className="h-3.5 w-3.5" /> : <TrendingDown className="h-3.5 w-3.5" />}
+            <span>{dailyPnl !== undefined ? `${dailyPnl >= 0 ? "+" : ""}$${dailyPnl.toFixed(2)}` : "—"}</span>
           </div>
 
           {/* Connection badge */}
@@ -94,7 +94,7 @@ export function AppTopBar() {
             connected ? "border-success/30 bg-success/10 text-success" : "border-destructive/30 bg-destructive/10 text-destructive"
           )}>
             {connected ? <Wifi className="h-3.5 w-3.5" /> : <WifiOff className="h-3.5 w-3.5" />}
-            <span>{connected ? "Deriv Live" : "Hors ligne"}</span>
+            <span>{!connected ? "Hors ligne" : isLive ? "Deriv Live" : "Simulation"}</span>
           </div>
         </div>
 

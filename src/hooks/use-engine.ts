@@ -59,6 +59,45 @@ export interface EngineStatus {
     max_total_exposure_pct: number;
     min_balance: number;
   };
+  regime: {
+    regime: string;
+    confidence: number;
+    adx: number;
+    bollinger_bandwidth: number;
+    ichimoku_cloud: string;
+    description: string;
+    recommended_strategy: string;
+  } | null;
+  calendar: {
+    active: boolean;
+    high_impact_window: boolean;
+    should_pause: boolean;
+    should_reduce: boolean;
+    upcoming: Array<{ time: string; title: string; impact: string; currency: string }>;
+    last_fetch: number;
+  } | null;
+  adaptive: {
+    total_trades: number;
+    total_wins: number;
+    total_pnl: number;
+    win_rate: number;
+    best_strategy: string;
+    best_hours: number[];
+    worst_hours: number[];
+    optimal_confidence: number;
+    win_rate_by_strategy: Record<string, number>;
+    win_rate_by_hour: Record<string, number>;
+    win_rate_by_regime: Record<string, number>;
+    recommendations: string[];
+  } | null;
+  anomaly: {
+    paused: boolean;
+    pause_remaining_sec: number;
+    reduce_size: boolean;
+    size_multiplier: number;
+    baseline_win_rate: number;
+    recent_alerts: unknown[];
+  } | null;
 }
 
 export interface EnginePosition {
@@ -128,19 +167,23 @@ export function useEngine() {
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [connected, setConnected] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [latencyMs, setLatencyMs] = useState<number | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const fetchStatus = useCallback(async () => {
+    const start = performance.now();
     try {
       const res = await fetch(`${API_BASE}/status`);
       if (res.ok) {
         const data = await res.json();
         setStatus(data);
         setConnected(true);
+        setLatencyMs(Math.round(performance.now() - start));
       }
     } catch {
       setConnected(false);
+      setLatencyMs(null);
     }
   }, []);
 
@@ -239,6 +282,7 @@ export function useEngine() {
     logs,
     connected,
     loading,
+    latencyMs,
     apiCall,
     refresh: () => { fetchStatus(); fetchLogs(); },
   };

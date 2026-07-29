@@ -109,14 +109,12 @@ function CompteDerivPage() {
       if (res.ok) {
         setTestResult(await res.json());
       } else {
-        setTestResult({
-          account: true, balance: true, instruments: true, trading: true, vps: true,
-        });
+        toast.error("Le diagnostic a échoué — le moteur a répondu une erreur.");
+        setTestResult({ account: false, balance: false, instruments: false, trading: false, vps: false });
       }
     } catch {
-      setTestResult({
-        account: true, balance: true, instruments: true, trading: true, vps: true,
-      });
+      toast.error("Le diagnostic a échoué — moteur injoignable.");
+      setTestResult({ account: false, balance: false, instruments: false, trading: false, vps: false });
     } finally {
       setTesting(false);
     }
@@ -272,18 +270,20 @@ function CompteDerivPage() {
             {[
               { key: "account", label: "Authentification Compte MT5" },
               { key: "balance", label: "Récupération du Solde & Equity" },
-              { key: "instruments", label: "Cotations Indices Volatilité (Deriv)" },
+              { key: "instruments", label: `Cotations ${status?.config?.symbol ?? "instrument configuré"}` },
               { key: "trading", label: "Permission d'Exécution d'Ordres" },
               { key: "vps", label: "Synchro VPS Serveur 24/7" },
             ].map((check) => {
-              const passed = testResult ? (testResult as any)[check.key] : connected;
+              const passed = testResult ? (testResult as any)[check.key] : null;
               return (
                 <div key={check.key} className="flex items-center justify-between rounded-xl border border-border/40 bg-background/50 p-3">
                   <span className="text-xs font-bold text-foreground">{check.label}</span>
-                  {passed ? (
+                  {passed === null ? (
+                    <span className="flex items-center gap-1 text-xs font-bold text-muted-foreground">Non testé</span>
+                  ) : passed ? (
                     <span className="flex items-center gap-1 text-xs font-bold text-success"><CheckCircle2 className="h-4 w-4" /> OK</span>
                   ) : (
-                    <span className="flex items-center gap-1 text-xs font-bold text-muted-foreground"><XCircle className="h-4 w-4" /> En attente</span>
+                    <span className="flex items-center gap-1 text-xs font-bold text-destructive"><XCircle className="h-4 w-4" /> Échec</span>
                   )}
                 </div>
               );

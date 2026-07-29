@@ -5,7 +5,8 @@ import {
   Clock, Target, Cpu, Download, ArrowUpRight, ArrowDownRight, Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { useEngine, type LogEntry } from "@/hooks/use-engine";
+import { useEngine } from "@/hooks/use-engine";
+import { logsToTrades, type TradeRecord } from "@/lib/trades";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/historique")({
@@ -13,63 +14,24 @@ export const Route = createFileRoute("/historique")({
   component: HistoriquePage,
 });
 
-interface TradeRecord {
-  id: number;
-  time: string;
-  instrument: string;
-  strategy: string;
-  direction: string;
-  confidence: number;
-  entry_price: number;
-  exit_price: number;
-  pnl: number;
-  result: "win" | "loss";
-  mode: "auto" | "manual";
-  account: "demo" | "real";
-  entry_reason: string;
-  exit_reason: string;
-  duration: string;
+function tradesToCsv(trades: TradeRecord[]): string {
+  const header = ["Horodatage", "Instrument", "Stratégie", "Direction", "Confiance", "Entrée", "Sortie", "P&L", "Résultat"];
+  const rows = trades.map((t) => [
+    t.time, t.instrument, t.strategy, t.direction,
+    t.confidence.toFixed(0), t.entry_price.toFixed(2), t.exit_price.toFixed(2),
+    t.pnl.toFixed(2), t.result,
+  ]);
+  return [header, ...rows].map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
 }
 
-function logsToTrades(logs: LogEntry[]): TradeRecord[] {
-  const trades: TradeRecord[] = [];
-  let id = 0;
-  for (const log of logs) {
-    const msg = log.message || "";
-    const data = log.data ?? {};
-    if (log.category === "trade" || log.category === "execution") {
-      const isWin = msg.toLowerCase().includes("win") || msg.toLowerCase().includes("profit") || (data.profit as number) > 0;
-      const direction = (data.direction as string) ?? (msg.includes("BUY") ? "BUY" : msg.includes("SELL") ? "SELL" : "BUY");
-      const profit = (data.profit as number) ?? (data.pnl as number) ?? 0;
-      const symbol = (data.symbol as string) ?? (data.instrument as string) ?? "Volatility 100";
-      const confidence = (data.confidence as number) ?? 0;
-      const entry = (data.entry_price as number) ?? (data.price as number) ?? 0;
-      const exit = (data.exit_price as number) ?? (data.close_price as number) ?? 0;
-      const reason = (data.reason as string) ?? (data.entry_reason as string) ?? "";
-      const exitReason = (data.exit_reason as string) ?? (data.close_reason as string) ?? "";
-      const mode = (data.mode as string) === "manual" ? "manual" : "auto";
-      const account = (data.account as string) === "live" ? "real" : "demo";
-      const duration = data.duration ? String(data.duration) : "";
-      trades.push({
-        id: ++id,
-        time: log.datetime || new Date(log.timestamp * 1000).toLocaleString("fr-FR"),
-        instrument: symbol,
-        strategy: (data.strategy as string) ?? "ia",
-        direction,
-        confidence,
-        entry_price: entry,
-        exit_price: exit,
-        pnl: profit,
-        result: isWin ? "win" : "loss",
-        mode: mode as "auto" | "manual",
-        account: account as "demo" | "real",
-        entry_reason: reason,
-        exit_reason: exitReason,
-        duration,
-      });
-    }
-  }
-  return trades.sort((a, b) => b.id - a.id);
+function downloadCsv(csv: string, filename: string) {
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 function HistoriquePage() {
@@ -78,7 +40,6 @@ function HistoriquePage() {
     instrument: "all",
     strategy: "all",
     result: "all",
-    mode: "all",
   });
   const [selected, setSelected] = useState<TradeRecord | null>(null);
 
@@ -90,8 +51,7 @@ function HistoriquePage() {
   const filtered = trades.filter(t =>
     (filters.instrument === "all" || t.instrument === filters.instrument) &&
     (filters.strategy === "all" || t.strategy === filters.strategy) &&
-    (filters.result === "all" || t.result === filters.result) &&
-    (filters.mode === "all" || t.mode === filters.mode)
+    (filters.result === "all" || t.result === filters.result)
   );
 
   const totalPnl = filtered.reduce((s, t) => s + t.pnl, 0);
@@ -117,7 +77,12 @@ function HistoriquePage() {
               </p>
             </div>
           </div>
-          <Button variant="outline" className="rounded-xl h-10 border-border/50 bg-card/60 text-xs font-bold gap-2 relative z-10">
+          <Button
+            variant="outline"
+            disabled={filtered.length === 0}
+            onClick={() => downloadCsv(tradesToCsv(filtered), `historique-trades-${Date.now()}.csv`)}
+            className="rounded-xl h-10 border-border/50 bg-card/60 text-xs font-bold gap-2 relative z-10"
+          >
             <Download className="h-4 w-4" /> Exporter CSV
           </Button>
         </div>

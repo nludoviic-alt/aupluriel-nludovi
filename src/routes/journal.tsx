@@ -12,24 +12,23 @@ export const Route = createFileRoute("/journal")({
   component: JournalPage,
 });
 
+// Valeurs réelles émises par engine/logger.py (LogLevel) — toujours en MAJUSCULES.
 const LEVEL_ICONS: Record<string, React.ElementType> = {
-  info: Info,
-  warning: AlertTriangle,
-  error: AlertTriangle,
-  success: TrendingUp,
-  trade: TrendingUp,
-  decision: Activity,
-  risk: AlertTriangle,
+  INFO: Info,
+  WARN: AlertTriangle,
+  ERROR: AlertTriangle,
+  TRADE: TrendingUp,
+  SIGNAL: Activity,
+  RISK: AlertTriangle,
 };
 
 const LEVEL_COLORS: Record<string, string> = {
-  info: "text-muted-foreground",
-  warning: "text-amber-400",
-  error: "text-destructive",
-  success: "text-success",
-  trade: "text-success",
-  decision: "text-primary",
-  risk: "text-amber-400",
+  INFO: "text-muted-foreground",
+  WARN: "text-amber-400",
+  ERROR: "text-destructive",
+  TRADE: "text-success",
+  SIGNAL: "text-primary",
+  RISK: "text-amber-400",
 };
 
 function JournalPage() {
@@ -95,10 +94,12 @@ function JournalPage() {
           <select value={levelFilter} onChange={e => setLevelFilter(e.target.value)}
             className="h-9 rounded-xl bg-background/60 border border-border/50 text-xs px-3 font-semibold text-foreground">
             <option value="all">Tous niveaux</option>
-            <option value="info">Info</option>
-            <option value="warning">Warning</option>
-            <option value="error">Error</option>
-            <option value="success">Success</option>
+            <option value="INFO">Info</option>
+            <option value="WARN">Warning</option>
+            <option value="ERROR">Error</option>
+            <option value="TRADE">Trade</option>
+            <option value="SIGNAL">Signal</option>
+            <option value="RISK">Risk</option>
           </select>
           <select value={categoryFilter} onChange={e => setCategoryFilter(e.target.value)}
             className="h-9 rounded-xl bg-background/60 border border-border/50 text-xs px-3 font-semibold text-foreground">
@@ -126,8 +127,10 @@ function JournalPage() {
         ) : (
           <div className="space-y-1.5 max-h-[600px] overflow-y-auto">
             {filtered.map((log, i) => {
-              const Icon = LEVEL_ICONS[log.level] ?? LEVEL_ICONS[log.category] ?? Info;
-              const color = LEVEL_COLORS[log.level] ?? LEVEL_COLORS[log.category] ?? "text-muted-foreground";
+              const Icon = LEVEL_ICONS[log.level] ?? Info;
+              const color = log.level === "TRADE" && log.message.toLowerCase().includes("loss")
+                ? "text-destructive"
+                : LEVEL_COLORS[log.level] ?? "text-muted-foreground";
               return (
                 <div key={i} className="flex items-start gap-3 rounded-lg border border-border/30 bg-background/30 px-3 py-2.5 hover:bg-muted/20 transition-colors">
                   <Icon className={cn("h-4 w-4 shrink-0 mt-0.5", color)} />

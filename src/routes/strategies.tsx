@@ -8,6 +8,7 @@ import { SYMBOLS } from "@/lib/deriv";
 import { ConfirmDialog, useConfirm } from "@/components/confirm-dialog";
 import { type Strategy } from "@/lib/strategies";
 import { cn } from "@/lib/utils";
+import { useEngine } from "@/hooks/use-engine";
 
 export const Route = createFileRoute("/strategies")({
   head: () => ({ meta: [{ title: "Stratégies — Au Pluriel" }] }),
@@ -25,18 +26,39 @@ function StrategiesPage() {
   const [items, setItems] = useState<Strategy[]>([]);
   const [editing, setEditing] = useState<Strategy | null>(null);
   const { confirmState, confirm } = useConfirm();
+  const { status, apiCall } = useEngine();
+  const engineConfig = status?.config;
 
   const [configForm, setConfigForm] = useState({
-    ia_mode: "automatic",
-    min_confidence: 75,
+    ia_mode: "observation",
+    min_confidence_threshold: 75,
     max_trades_per_hour: 5,
-    risk_per_trade_pct: 2.0,
+    risk_per_trade_pct: 0.25,
     allow_buy: true,
     allow_sell: true,
   });
+  const [configSynced, setConfigSynced] = useState(false);
 
-  const saveConfig = () => {
-    toast.success("Configuration sauvegardée");
+  useEffect(() => {
+    if (!engineConfig || configSynced) return;
+    setConfigForm({
+      ia_mode: engineConfig.ia_mode,
+      min_confidence_threshold: engineConfig.min_confidence,
+      max_trades_per_hour: engineConfig.max_trades_per_hour,
+      risk_per_trade_pct: engineConfig.risk_per_trade_pct,
+      allow_buy: engineConfig.allow_buy,
+      allow_sell: engineConfig.allow_sell,
+    });
+    setConfigSynced(true);
+  }, [engineConfig, configSynced]);
+
+  const saveConfig = async () => {
+    const result = await apiCall("config", "POST", configForm);
+    if (result) {
+      toast.success("Configuration sauvegardée");
+    } else {
+      toast.error("Échec de la sauvegarde — moteur injoignable ?");
+    }
   };
 
   useEffect(() => {
@@ -182,6 +204,11 @@ function StrategiesPage() {
           <div className="flex items-center gap-2">
             <Settings className="h-5 w-5 text-primary" />
             <h3 className="text-sm font-bold text-foreground">Paramètres de Stratégie & Risque</h3>
+            {engineConfig?.symbol && (
+              <span className="rounded-md bg-primary/10 text-primary px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider">
+                {engineConfig.symbol}
+              </span>
+            )}
           </div>
           <Button size="sm" onClick={saveConfig} className="gap-1.5 text-xs font-bold rounded-xl">
             <Save className="h-3.5 w-3.5" /> Sauvegarder
@@ -195,10 +222,7 @@ function StrategiesPage() {
               {(["automatic", "semi-auto", "observation"] as const).map((m) => (
                 <button
                   key={m}
-                  onClick={() => {
-                    setConfigForm((prev) => ({ ...prev, ia_mode: m }));
-                    toast.success(`Mode IA: ${m}`);
-                  }}
+                  onClick={() => setConfigForm((prev) => ({ ...prev, ia_mode: m }))}
                   className={cn(
                     "py-1.5 text-[10px] font-bold uppercase rounded-lg transition-all capitalize",
                     configForm.ia_mode === m ? "bg-primary text-primary-foreground shadow" : "text-muted-foreground hover:text-foreground"
@@ -211,13 +235,13 @@ function StrategiesPage() {
           </div>
 
           <div className="space-y-2">
-            <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Confiance Min ({configForm.min_confidence}%)</label>
+            <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Confiance Min ({configForm.min_confidence_threshold}%)</label>
             <input
               type="range"
               min="50"
               max="95"
-              value={configForm.min_confidence}
-              onChange={(e) => setConfigForm({ ...configForm, min_confidence: Number(e.target.value) })}
+              value={configForm.min_confidence_threshold}
+              onChange={(e) => setConfigForm({ ...configForm, min_confidence_threshold: Number(e.target.value) })}
               className="w-full accent-primary"
             />
           </div>
